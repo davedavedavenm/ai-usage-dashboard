@@ -79,9 +79,10 @@ the API — always masked):
 - **Telegram alerts**: create a bot with @BotFather, send it `/start`, then
   either find your chat ID via
   `https://api.telegram.org/bot<TOKEN>/getUpdates` or use the Settings tab's
-  *Send test message* button. Set the alert threshold (default 15%).
-  Alerts are deduped per provider window (one message per reset period) in
-  `collector/state.json`.
+  *Send test message* button. Alerts are **staged**: 🟡 50% → 🟠 30% → 🔴
+  final threshold (default 15%) → 🚨 at 0%, one message per stage per provider
+  window per reset period, deduped in `collector/state.json` — so you're warned
+  early, never bombarded, and never told only when you're already out.
 
 ## Provider coverage
 

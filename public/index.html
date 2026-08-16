@@ -262,7 +262,7 @@
     </div>
     <div class="sblock">
       <div class="shead">Telegram alerts</div>
-      <div class="ssub">message when any provider drops below threshold</div>
+      <div class="ssub">staged warnings per window: 🟡 50% → 🟠 30% → 🔴 below this, once per reset</div>
       <div class="srow"><span class="sstate" id="tgState">checking…</span></div>
       <div class="srow" style="align-items:flex-start">
         <div style="flex:1;min-width:220px">
@@ -274,7 +274,7 @@
           <input type="text" id="tgChat" style="width:100%" placeholder="e.g. 812345678" autocomplete="off">
         </div>
         <div>
-          <label for="tgThreshold">Alert below (%)</label>
+          <label for="tgThreshold">Final warning below (%)</label>
           <input type="number" id="tgThreshold" min="1" max="100" value="15" style="width:80px">
         </div>
       </div>

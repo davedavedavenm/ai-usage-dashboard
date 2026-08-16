@@ -415,6 +415,31 @@ function tightestEntry(providers) {
   return out;
 }
 
+function buildStages(threshold) {
+  const final = Math.max(5, Math.min(Number(threshold) || 15, 49));
+  return [
+    { pct: 50, emoji: "🟡", headline: "half gone", line: "Halfway through" },
+    { pct: 30, emoji: "🟠", headline: "getting low", line: "Getting low" },
+    { pct: final, emoji: "🔴", headline: "nearly out", line: "Nearly out" },
+  ].sort((a, b) => b.pct - a.pct);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildAlertText(stage, info) {
+  const { label, entry, pct } = info;
+  const out = pct <= 0;
+  const emoji = out ? "🚨" : stage.emoji;
+  const headline = out ? "is out of allowance" : stage.headline;
+  const pctText = out ? "Nothing left" : `<b>${pct}%</b> left`;
+  const resetText = entry.resetAt
+    ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+    : "";
+  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}\n${esc(DASHBOARD_URL)}`;
+}
+
 async function sendTelegram(cfg, text) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
@@ -422,7 +447,7 @@ async function sendTelegram(cfg, text) {
     const res = await fetch(`${TG_API}/bot${cfg.token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: cfg.chatId, text }),
+      body: JSON.stringify({ chat_id: cfg.chatId, text, parse_mode: "HTML" }),
       signal: ctrl.signal,
     });
     const body = await res.text();
@@ -439,18 +464,31 @@ async function runAlerts(providers, state, cfg) {
     console.log(JSON.stringify({ at: new Date().toISOString(), alerts: "disabled" }));
     return;
   }
+  const stages = buildStages(cfg.threshold);
+  const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
+  const winKeyOf = (e) => `${e.window || ""}|${e.resetAt || ""}`;
   for (const { id, label, entry } of tightestEntry(providers)) {
-    if (entry.percentRemaining > cfg.threshold) continue;
-    const winKey = `${entry.window || ""}|${entry.resetAt || ""}`;
-    const prev = state.alerts && state.alerts[id];
-    if (prev && prev.winKey === winKey) continue;
-    const resetText = entry.resetAt
-      ? ` — resets ${new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", hour12: false })}`
-      : "";
-    const text = `AI Allowance: ${label} "${entry.name}" at ${entry.percentRemaining}% left${resetText}\n${DASHBOARD_URL}`;
-    const result = await sendTelegram(cfg, text);
+    const pct = entry.percentRemaining;
+    const stage = [...stages].reverse().find(s => pct <= s.pct);
+    if (!stage) continue;
+    const winKey = winKeyOf(entry);
     state.alerts = state.alerts || {};
-    state.alerts[id] = { winKey, sentAt: new Date().toISOString(), result };
+    const prev = state.alerts[id];
+    let sent = {};
+    if (prev && prev.winKey) {
+      const pk = prev.winKey.split("|");
+      const ck = winKey.split("|");
+      const sameReset = pk[1] && ck[1] &&
+        Math.abs(new Date(norm(pk[1])).getTime() - new Date(norm(ck[1])).getTime()) < 2 * 3600 * 1000;
+      if (pk[0] === ck[0] && sameReset) {
+        sent = (prev.stages && typeof prev.stages === "object") ? prev.stages : {};
+        if (!prev.stages && pct <= ALERT_THRESHOLD_DEFAULT) sent[stage.pct] = true;
+      }
+    }
+    if (sent[stage.pct]) continue;
+    const result = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+    sent[stage.pct] = new Date().toISOString();
+    state.alerts[id] = { winKey, sentAt: new Date().toISOString(), stages: sent, result };
     writeState(state);
   }
 }

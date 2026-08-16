@@ -186,7 +186,8 @@ const server = http.createServer((req, res) => {
     if (!token || !chatId) return send(422, '{"error":"set telegram bot token and chat id first"}');
     const payload = JSON.stringify({
       chat_id: chatId,
-      text: "AI Allowance: Telegram alerts work. You will get a message here when any provider drops below the threshold.",
+      parse_mode: "HTML",
+      text: "✅ <b>AI Allowance alerts are live</b>\nYou'll get staged warnings per window — 🟡 50% → 🟠 30% → 🔴 final threshold — once per reset, plus 🚨 when a window hits 0%.",
     });
     const reqOpts = {
       method: "POST",
