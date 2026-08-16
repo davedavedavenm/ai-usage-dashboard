@@ -1,0 +1,7 @@
+data/
+.env
+*.log
+collector/state.json
+collector/node_modules/
+scripts/node_modules/
+node_modules/

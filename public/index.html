@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Allowance — Homelab Console</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #11141b;
+    --panel-edge: #232935;
+    --ink: #dfe5ee;
+    --ink-dim: #77808f;
+    --ink-faint: #4a515e;
+    --amber: #f2a93b;
+    --red: #f25d5d;
+    --green: #3ddc97;
+    --font-display: "Bahnschrift", "Archivo", "Barlow Semi Condensed", "Segoe UI", sans-serif;
+    --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% -10%, rgba(56, 72, 99, 0.22), transparent 60%),
+      linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: auto, 44px 44px, 44px 44px;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px);
+    opacity: .5;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 22px 60px; }
+
+  header.masthead {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 18px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--panel-edge);
+    padding-bottom: 18px; margin-bottom: 8px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand h1 {
+    font-size: clamp(26px, 4vw, 40px);
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .brand h1 em { font-style: normal; color: var(--amber); }
+  .brand .tag {
+    font-family: var(--font-mono);
+    font-size: 11px; color: var(--ink-dim);
+    letter-spacing: .18em; text-transform: uppercase;
+    border: 1px solid var(--panel-edge);
+    padding: 4px 8px; border-radius: 3px;
+    transform: translateY(-4px);
+    display: inline-block;
+  }
+  .readout { text-align: right; font-family: var(--font-mono); }
+  .readout .clock { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+  .readout .date { font-size: 11px; color: var(--ink-dim); letter-spacing: .14em; text-transform: uppercase; }
+  .syncline {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    font-family: var(--font-mono); font-size: 15px; letter-spacing: .08em;
+    color: var(--ink); text-transform: uppercase;
+    padding: 12px 0 24px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--panel-edge); border-radius: 4px;
+    padding: 7px 12px; background: rgba(255,255,255,0.03);
+  }
+  .chip .led { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .chip.warn .led { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .chip.bad .led { background: var(--red); box-shadow: 0 0 6px var(--red); animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    position: relative;
+    background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0) 40%), var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    padding: 18px 18px 14px;
+    overflow: hidden;
+    opacity: 0; transform: translateY(14px);
+    animation: arrive .5s cubic-bezier(.2,.7,.3,1) forwards;
+  }
+  @keyframes arrive { to { opacity: 1; transform: none; } }
+  .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--accent, var(--ink-faint));
+  }
+  .card.dead { filter: saturate(.25) brightness(.75); }
+  .card.err { --accent: var(--red); }
+
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .pname { font-size: 19px; font-weight: 700; letter-spacing: .04em; }
+  .psub { font-family: var(--font-mono); font-size: 10px; color: var(--ink-dim); letter-spacing: .16em; text-transform: uppercase; margin-top: 3px; }
+  .pstate { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
+    border: 1px solid var(--panel-edge); color: var(--ink-dim); border-radius: 3px; padding: 3px 6px; white-space: nowrap; }
+  .pstate.ok { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .pstate.err { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+
+  .bighero { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+  .bignum {
+    font-family: var(--font-mono);
+    font-size: clamp(46px, 6vw, 62px);
+    font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    color: var(--accent);
+  }
+  .bignum small { font-size: 20px; font-weight: 600; color: var(--ink-dim); letter-spacing: 0; }
+  .card.state-crit .bignum { animation: pulse 1.6s infinite; }
+  .heroside { min-width: 0; }
+  .wtag2 {
+    display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em;
+    border: 1px solid var(--panel-edge); border-radius: 3px; padding: 3px 8px;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .hreset2 { font-family: var(--font-mono); font-size: 13.5px; color: var(--ink-dim); margin-top: 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hreset2 b { color: var(--ink); font-weight: 600; }
+  .minis { margin-top: 13px; border-top: 1px dashed #222835; padding-top: 10px; display: grid; gap: 8px; }
+  .mini { display: grid; grid-template-columns: 36px 1fr 44px auto; gap: 10px; align-items: center; }
+  .mini .mtag { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; color: var(--ink-dim); }
+  .mini .mmeter { height: 5px; background: #1b202a; border-radius: 3px; overflow: hidden; }
+  .mini .mmeter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+  .mini .mmeter.low i { background: var(--amber); }
+  .mini .mmeter.crit i { background: var(--red); }
+  .mini .mpct { font-family: var(--font-mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .mini .mreset { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .card.state-crit { box-shadow: 0 0 22px rgba(242, 93, 93, 0.25), inset 0 0 0 1px rgba(242, 93, 93, 0.35); }
+  @keyframes pulse { 50% { opacity: .55; } }
+  .vline {
+    display: flex; justify-content: space-between; gap: 8px; margin-top: 12px;
+    border-top: 1px dashed #222835; padding-top: 8px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim);
+  }
+  .vline b { color: var(--ink); font-weight: 600; }
+
+  .tabs { display: flex; gap: 8px; margin: 18px 0 0; }
+  .tab {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    background: none; border: 1px solid var(--panel-edge); color: var(--ink-dim);
+    padding: 8px 16px; border-radius: 5px 5px 0 0; cursor: pointer; border-bottom: none;
+  }
+  .tab.active { color: var(--ink); background: var(--panel); border-color: var(--panel-edge); }
+  .settings { display: none; border: 1px solid var(--panel-edge); border-radius: 0 8px 8px 8px; background: var(--panel); padding: 22px; }
+  .settings.show { display: block; }
+  .shead { font-size: 17px; font-weight: 700; letter-spacing: .04em; margin: 0 0 4px; }
+  .ssub { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-dim); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 12px; }
+  .sblock { border-top: 1px dashed #222835; margin-top: 20px; padding-top: 18px; }
+  .sblock:first-of-type { border-top: none; margin-top: 8px; padding-top: 0; }
+  .srow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  .settings input[type="text"], .settings input[type="password"], .settings input[type="number"], .settings textarea {
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--ink);
+    background: #0d1017; border: 1px solid var(--panel-edge); border-radius: 5px; padding: 9px 11px;
+    outline: none; min-width: 0;
+  }
+  .settings input:focus, .settings textarea:focus { border-color: var(--amber); }
+  .settings textarea { width: 100%; height: 74px; resize: vertical; }
+  .settings label { font-size: 12.5px; color: var(--ink-dim); display: block; margin-bottom: 5px; }
+  .sbtn {
+    font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    background: var(--amber); color: #14161c; border: none; border-radius: 4px; padding: 10px 18px;
+    font-weight: 700; cursor: pointer;
+  }
+  .sbtn.secondary { background: none; color: var(--ink); border: 1px solid var(--panel-edge); }
+  .sbtn:disabled { opacity: .5; cursor: default; }
+  .sstate { font-family: var(--font-mono); font-size: 11px; border-radius: 3px; padding: 4px 8px; border: 1px solid var(--panel-edge); color: var(--ink-dim); }
+  .sstate.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+  .sstate.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+  .smsg { font-family: var(--font-mono); font-size: 11.5px; margin-top: 8px; min-height: 16px; }
+  .smsg.ok { color: var(--green); }
+  .smsg.err { color: var(--red); }
+  .steps { font-size: 13px; line-height: 1.75; color: var(--ink-dim); margin-top: 10px; }
+  .steps b { color: var(--ink); }
+  .steps code { font-family: var(--font-mono); font-size: 11.5px; color: var(--amber); background: #0d1017; padding: 1px 5px; border-radius: 3px; }
+
+  .spark { margin-top: 10px; border-top: 1px dashed #222835; padding-top: 8px; }
+  .spark svg { display: block; width: 100%; height: 26px; }
+
+  .card .hint {
+    margin-top: 14px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim);
+    border: 1px dashed #2a3140; border-radius: 5px; padding: 9px 10px; line-height: 1.5;
+  }
+  .card .hint code { color: var(--amber); }
+
+  .empty {
+    border: 1px dashed #2a3140; border-radius: 8px; padding: 60px 24px; text-align: center;
+    font-family: var(--font-mono); color: var(--ink-dim); letter-spacing: .12em;
+  }
+  .empty .big { font-size: 18px; color: var(--ink); margin-bottom: 12px; text-transform: uppercase; }
+
+  footer {
+    margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--panel-edge);
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint);
+    letter-spacing: .12em; text-transform: uppercase;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  }
+  @media (max-width: 560px) {
+    .readout .clock { font-size: 19px; }
+    .wrap { padding: 18px 14px 40px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div class="brand">
+      <h1>AI <em>Allowance</em></h1>
+      <span class="tag">Home lab console</span>
+    </div>
+    <div class="readout">
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="date" id="date">&nbsp;</div>
+    </div>
+  </header>
+  <div class="syncline">
+    <span class="chip" id="syncChip"><span class="led"></span><span id="syncText">NO DATA</span></span>
+    <span class="chip"><span class="led" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>Checks every 10 minutes</span>
+    <span class="chip">Live provider APIs</span>
+    <span class="chip" id="usableChip" hidden></span>
+    <span class="chip" id="nextResetChip" hidden></span>
+  </div>
+  <div class="tabs">
+    <button class="tab active" id="tabDash" onclick="switchTab('dash')">Dashboard</button>
+    <button class="tab" id="tabSet" onclick="switchTab('settings')">Settings</button>
+  </div>
+  <main class="grid" id="grid"></main>
+  <section class="settings" id="settingsPanel">
+    <div class="sblock">
+      <div class="shead">Qwen · Alibaba Token Plan</div>
+      <div class="ssub">quota via console cookie · intl (ap-southeast-1)</div>
+      <div class="srow"><span class="sstate" id="aliState">checking…</span><span class="smsg" id="aliMsg" style="margin-top:0"></span></div>
+      <label for="aliCookie">Console Cookie header (paste the whole thing, one line)</label>
+      <textarea id="aliCookie" placeholder="isg=…; cna=…; login_aliyunid_ticket=…; (the full cookie: value — usually 1500+ characters)" spellcheck="false"></textarea>
+      <div class="srow" style="margin-top:12px">
+        <button class="sbtn" id="aliSave" onclick="saveAli()">Save cookie</button>
+        <button class="sbtn secondary" onclick="document.getElementById('aliCookie').value=''">Clear field</button>
+      </div>
+      <div class="steps">
+        <b>How to get the cookie (2 minutes):</b><br>
+        1. Open the <a href="https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal" target="_blank" rel="noopener">Token Plan page</a> logged in.<br>
+        2. Press <b>F12</b> → <b>Network</b> tab → refresh the page.<br>
+        3. Click any request to <code>api.json</code> → <b>right-click it → Copy → Copy as cURL (bash)</b>.<br>
+        4. In the copied text find <code>-H 'cookie: …'</code> and copy everything between the quotes.<br>
+        <b>Do not copy from the Headers pane</b> — DevTools truncates it with a <code>…</code> there and the cookie will be rejected.<br>
+        5. Paste above → Save. The card updates on the next 10-minute check.
+      </div>
+    </div>
+    <div class="sblock">
+      <div class="shead">Telegram alerts</div>
+      <div class="ssub">message when any provider drops below threshold</div>
+      <div class="srow"><span class="sstate" id="tgState">checking…</span></div>
+      <div class="srow" style="align-items:flex-start">
+        <div style="flex:1;min-width:220px">
+          <label for="tgToken">Bot token (from @BotFather)</label>
+          <input type="password" id="tgToken" style="width:100%" placeholder="1234567890:AA…" autocomplete="off">
+        </div>
+        <div style="flex:1;min-width:160px">
+          <label for="tgChat">Chat ID</label>
+          <input type="text" id="tgChat" style="width:100%" placeholder="e.g. 812345678" autocomplete="off">
+        </div>
+        <div>
+          <label for="tgThreshold">Alert below (%)</label>
+          <input type="number" id="tgThreshold" min="1" max="100" value="15" style="width:80px">
+        </div>
+      </div>
+      <div class="srow">
+        <button class="sbtn" id="tgSave" onclick="saveTg()">Save</button>
+        <button class="sbtn secondary" id="tgTest" onclick="testTg()">Send test message</button>
+        <span class="smsg" id="tgMsg" style="margin-top:0"></span>
+      </div>
+      <div class="steps">
+        <b>Setup (once):</b><br>
+        1. In Telegram, message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → send <code>/newbot</code> → follow prompts → copy the <b>token</b>.<br>
+        2. Open a chat with your new bot and send it any message (it cannot message you first).<br>
+        3. Get your <b>chat ID</b>: open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser → find <code>"chat":{"id":…}</code>.<br>
+        4. Paste both above → Save → <b>Send test message</b> to confirm.
+      </div>
+    </div>
+    <div class="sblock">
+      <div class="steps" style="margin-top:0">
+        <b>Notes:</b> secrets are stored only on the server (<code>data/settings.json</code>, never committed), shown masked here, and the dashboard is LAN-only.
+        Claude / ChatGPT / Z.ai / OpenCode Go / Gemini use OAuth logins on the server — see the dashboard card hints or the repo README for the SSH recipe.
+      </div>
+    </div>
+  </section>
+  <div class="empty" id="empty" hidden>
+    <div class="big">Awaiting first sync</div>
+    The collector probes the quota APIs every 10 minutes and pushes them here.
+  </div>
+  <footer>
+    <span>ai-usage-dashboard · zero-dep node · lan only</span>
+    <span id="footMeta"></span>
+  </footer>
+</div>
+
+<script>
+const META = {
+  anthropic:            { name: "Claude",            sub: "Anthropic Max/Pro",     accent: "#e5484d", hint: "On the server: refresh Anthropic login (claude / opencode auth)." },
+  openai:               { name: "ChatGPT",           sub: "OpenAI Plus/Pro",       accent: "#10a37f", hint: "On the server: <code>opencode auth login -p openai</code>" },
+  zai:                  { name: "Z.ai",              sub: "GLM Coding Plan",       accent: "#ec4899", hint: "Check <code>opencode auth</code> for zai-coding-plan." },
+  "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Check <code>opencode auth</code> for opencode-go." },
+  "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
+  "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Token Plan quota is console-only (no API-key endpoint). To enable: log into <code>modelstudio.console.alibabacloud.com</code>, DevTools → Network → right-click an <code>api.json</code> request → Copy as cURL (bash) → paste the <code>cookie:</code> value in the Settings tab. Re-paste when it expires." },
+  "google-gemini-cli":  { name: "Gemini CLI",        sub: "Google",                accent: "#a3e635" },
+  "google-agy":         { name: "AI Studio",         sub: "Google AGY",            accent: "#06b6d4" },
+  "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },
+  openrouter:           { name: "OpenRouter",        sub: "credits",               accent: "#8b93a7" },
+  copilot:              { name: "Copilot",           sub: "GitHub",                accent: "#94a3b8" },
+  xai:                  { name: "xAI",               sub: "SuperGrok",             accent: "#f472b6" },
+};
+const PRIMARY = ["anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan"];
+const FALLBACK = { name: "—", sub: "", accent: "#77808f" };
+let state = null;
+
+function esc(s) { const d = document.createElement("div"); d.textContent = String(s ?? ""); return d.innerHTML; }
+function pctClass(p) { return p <= 15 ? "crit" : p <= 30 ? "low" : ""; }
+
+function fmtRemaining(ms) {
+  if (ms == null || isNaN(ms)) return "—";
+  if (ms <= 0) return "any moment";
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "less than a minute";
+  if (m < 60) return m + "m";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h " + (m % 60) + "m";
+  return Math.floor(h / 24) + "d " + (h % 24) + "h";
+}
+function fmtClock(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const h = d.getHours().toString().padStart(2, "0");
+  const m = d.getMinutes().toString().padStart(2, "0");
+  return h + ":" + m;
+}
+function sparkSVG(id) {
+  const s = (window.__series && window.__series[id]) || [];
+  if (s.length < 2) return "";
+  const pts = s.slice(-144);
+  const W = 320, H = 26;
+  const coords = pts.map((v, i) => {
+    const x = (i / (pts.length - 1)) * W;
+    const y = H - 2 - (Math.max(0, Math.min(100, v)) / 100) * (H - 6);
+    return x.toFixed(1) + "," + y.toFixed(1);
+  });
+  const threshY = (H - 2 - (15 / 100) * (H - 6)).toFixed(1);
+  return `<div class="spark" aria-hidden="true"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <line x1="0" y1="${threshY}" x2="${W}" y2="${threshY}" stroke="var(--red)" stroke-width="0.7" stroke-dasharray="4 5" opacity="0.35"/>
+    <polyline points="${coords.join(" ")}" fill="none" stroke="var(--accent)" stroke-width="1.6" opacity="0.9"/>
+  </svg></div>`;
+}
+
+function windowTag(w, name) {
+  if (/5h|fivehour|rolling/i.test(w || "")) return "5H";
+  if (/weekly/i.test(w || "")) return "WK";
+  if (/monthly/i.test(w || "")) return "MO";
+  if (/mcp|tool/i.test(w || "")) return "MCP";
+  const base = (name || w || "").replace(/\(limited\)/gi, "").trim().toUpperCase();
+  const m = /^(LAST\s+\d+H|\d+H|THIS\s+WEEK|THIS\s+MONTH|TOOLS?|MCP)/.exec(base);
+  if (m) return m[1].replace(/\s+/g, "");
+  return base.slice(0, 4) || "—";
+}
+const WIN_ORDER = { "5h": 0, fiveHour: 0, rolling: 0, weekly: 1, monthly: 2, mcp: 3 };
+function sortWindows(a, b) {
+  const pa = WIN_ORDER[a.window] ?? 9;
+  const pb = WIN_ORDER[b.window] ?? 9;
+  return (pa - pb) || (a.name || "").localeCompare(b.name || "");
+}
+
+function cardHTML(id, prov) {
+  const meta = META[id] || { ...FALLBACK, name: id };
+  const status = prov?.status || "unavailable";
+  const alive = status === "ok" || status === "partial";
+  const cls = alive ? "" : status === "error" ? "err dead" : "dead";
+  let stateChip = "";
+  if (status === "ok") stateChip = `<span class="pstate ok">live</span>`;
+  else if (status === "partial") stateChip = `<span class="pstate ok">partial</span>`;
+  else if (status === "error") stateChip = `<span class="pstate err">error</span>`;
+  else stateChip = `<span class="pstate">not connected</span>`;
+
+  let body = "";
+  if (alive) {
+    const entries = (prov.entries || []);
+    const percents = entries.filter(e => e.renderType === "percent" && e.percentRemaining != null).sort(sortWindows);
+    const values = entries.filter(e => e.renderType !== "percent" || e.percentRemaining == null);
+    if (percents.length) {
+      const worst = percents.reduce((a, b) => a.percentRemaining <= b.percentRemaining ? a : b);
+      const others = percents.filter(e => e !== worst);
+      const p = worst.percentRemaining;
+      body += `<div class="bighero">
+        <div class="bignum">${Math.round(p)}<small>%</small></div>
+        <div class="heroside">
+          <span class="wtag2">${windowTag(worst.window, worst.name)}</span>
+          <div class="hreset2">resets in <b class="cd" data-at="${esc(worst.resetAt || "")}">—</b><span class="wclock">${worst.resetAt ? " · " + fmtClock(worst.resetAt) : ""}</span></div>
+        </div>
+      </div>`;
+      if (others.length) {
+        body += `<div class="minis">${others.map(e => {
+          const op = e.percentRemaining;
+          return `<div class="mini" title="${esc(e.name)}">
+            <span class="mtag">${windowTag(e.window, e.name)}</span>
+            <span class="mmeter ${pctClass(op)}"><i style="width:${Math.max(0, Math.min(100, op))}%"></i></span>
+            <span class="mpct">${Math.round(op)}%</span>
+            <span class="mreset">in <span class="cd" data-at="${esc(e.resetAt || "")}">—</span></span>
+          </div>`;
+        }).join("")}</div>`;
+      }
+    }
+    if (values.length) {
+      body += values.map(e =>
+        `<div class="vline"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`
+      ).join("");
+    }
+    body += sparkSVG(id);
+  } else {
+    const msg = status === "error" ? esc(prov?.error || "provider error") : (meta.hint || "Not connected.");
+    body = `<div class="hint">${msg}</div>`;
+  }
+
+  const percentsForState = (prov?.entries || []).filter(e => e.renderType === "percent" && e.percentRemaining != null);
+  const bindingPct = percentsForState.length ? Math.min(...percentsForState.map(e => e.percentRemaining)) : null;
+  const stateCls = bindingPct == null ? "" : ` state-${pctClass(bindingPct) || "ok"}`;
+  return `<section class="card ${cls}${stateCls}" style="--accent:${meta.accent}">
+    <div class="card-head">
+      <div><div class="pname">${esc(meta.name)}</div><div class="psub">${esc(meta.sub)}</div></div>
+      ${stateChip}
+    </div>
+    ${body}
+  </section>`;
+}
+
+function render(record) {
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("empty");
+  if (!record || !record.envelope) { grid.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  if (window.__hist) {
+    const series = {};
+    for (const h of window.__hist) {
+      if (!h || !h.p) continue;
+      for (const [pid, pct] of Object.entries(h.p)) {
+        if (typeof pct !== "number") continue;
+        (series[pid] = series[pid] || []).push(pct);
+      }
+    }
+    window.__series = series;
+  }
+  const provs = record.envelope.providers || {};
+  const extra = Object.keys(provs).filter(id => !PRIMARY.includes(id) && provs[id] && provs[id].status && provs[id].status !== "unavailable");
+  const order = PRIMARY.concat(extra);
+  grid.innerHTML = order.map(id => cardHTML(id, provs[id])).join("");
+  [...grid.querySelectorAll(".card")].forEach((c, i) => c.style.animationDelay = (i * 60) + "ms");
+  const meta = [];
+  if (record.envelope.exportedAt) meta.push("last checked " + new Date(record.envelope.exportedAt * 1000).toLocaleString());
+  meta.push(order.length + " services");
+  document.getElementById("footMeta").textContent = meta.join(" · ");
+  const worst = [];
+  for (const id of order) {
+    const prov = provs[id];
+    if (!prov || !prov.entries) continue;
+    const percents = prov.entries.filter(e => e.renderType === "percent" && e.percentRemaining != null);
+    if (percents.length) worst.push({ id, p: Math.min(...percents.map(e => e.percentRemaining)) });
+  }
+  if (worst.length) {
+    const w = worst.sort((a, b) => a.p - b.p)[0];
+    document.title = `${Math.round(w.p)}% left · ${(META[w.id] || FALLBACK).name} — AI Allowance`;
+  }
+  const usableChip = document.getElementById("usableChip");
+  const usable = worst.filter(w => w.p > 0).length;
+  if (worst.length) {
+    usableChip.hidden = false;
+    usableChip.className = "chip" + (usable === 0 ? " bad" : usable < worst.length ? " warn" : "");
+    usableChip.innerHTML = `Usable now <b style="margin-left:6px">${usable}/${worst.length}</b>`;
+  } else {
+    usableChip.hidden = true;
+  }
+  const chipEl = document.getElementById("nextResetChip");
+  const resets = [];
+  for (const id of order) {
+    const prov = provs[id];
+    if (!prov || !prov.entries) continue;
+    for (const e of prov.entries) {
+      if (!e || e.renderType !== "percent" || !e.resetAt) continue;
+      const t = Date.parse(e.resetAt);
+      if (!isNaN(t)) resets.push({ t, iso: e.resetAt, label: (META[id] || FALLBACK).name, name: e.name });
+    }
+  }
+  if (resets.length) {
+    resets.sort((a, b) => a.t - b.t);
+    const r = resets[0];
+    chipEl.hidden = false;
+    chipEl.innerHTML = `Next reset: ${esc(r.label)} ${esc(r.name)} · in <span class="cd" data-at="${esc(r.iso)}">—</span> (${fmtClock(r.iso)})`;
+  } else {
+    chipEl.hidden = true;
+  }
+}
+
+function updateSync(record) {
+  const chip = document.getElementById("syncChip");
+  const text = document.getElementById("syncText");
+  if (!record || !record.receivedAt) {
+    chip.className = "chip bad"; text.textContent = "No data yet"; return;
+  }
+  const ageMin = Math.floor((Date.now() - record.receivedAt) / 60000);
+  if (ageMin > 60) { chip.className = "chip bad"; text.textContent = `Out of date · ${ageMin}m`; }
+  else if (ageMin > 20) { chip.className = "chip warn"; text.textContent = `Out of date · ${ageMin}m`; }
+  else { chip.className = "chip"; text.textContent = `Updated ${ageMin < 1 ? "<1" : ageMin}m ago`; }
+}
+
+function tickCountdowns() {
+  const now = Date.now();
+  document.querySelectorAll(".cd").forEach(el => {
+    const at = el.dataset.at;
+    if (!at) return;
+    const t = Date.parse(at);
+    if (!isNaN(t)) el.textContent = fmtRemaining(t - now);
+  });
+}
+
+function tickClock() {
+  const n = new Date();
+  document.getElementById("clock").textContent = n.toLocaleTimeString([], { hour12: false });
+  document.getElementById("date").textContent = n.toLocaleDateString([], { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+}
+
+async function refresh() {
+  try {
+    const h = await fetch("/api/history", { cache: "no-store" });
+    window.__hist = await h.json();
+  } catch {}
+  try {
+    const r = await fetch("/api/quota", { cache: "no-store" });
+    const j = await r.json();
+    state = j;
+    render(j);
+    updateSync(j);
+    tickCountdowns();
+  } catch {
+    document.getElementById("syncText").textContent = "CONSOLE OFFLINE";
+    document.getElementById("syncChip").className = "chip bad";
+  }
+}
+
+function switchTab(which) {
+  const dash = document.getElementById("grid");
+  const set = document.getElementById("settingsPanel");
+  const td = document.getElementById("tabDash");
+  const ts = document.getElementById("tabSet");
+  const empty = document.getElementById("empty");
+  const isSet = which === "settings";
+  set.classList.toggle("show", isSet);
+  td.classList.toggle("active", !isSet);
+  ts.classList.toggle("active", isSet);
+  dash.style.display = isSet ? "none" : "";
+  empty.style.display = isSet ? "none" : "";
+  document.querySelector(".syncline").style.display = isSet ? "none" : "";
+  if (isSet) loadSettings();
+}
+
+async function loadSettings() {
+  try {
+    const r = await fetch("/api/settings", { cache: "no-store" });
+    const s = await r.json();
+    const aliState = document.getElementById("aliState");
+    if (s.alibaba.cookieTruncated) {
+      aliState.textContent = "saved but TRUNCATED — re-copy";
+      aliState.className = "sstate bad";
+    } else if (s.alibaba.cookieSet) {
+      aliState.textContent = "cookie set (" + s.alibaba.cookieLen + " chars)";
+      aliState.className = "sstate ok";
+    } else {
+      aliState.textContent = "not set";
+      aliState.className = "sstate";
+    }
+    const tgState = document.getElementById("tgState");
+    if (s.telegram.tokenSet && s.telegram.chatId) {
+      tgState.textContent = "configured · " + s.telegram.tokenMask + " · chat " + s.telegram.chatId;
+      tgState.className = "sstate ok";
+    } else {
+      tgState.textContent = s.telegram.tokenSet ? "chat id missing" : "not configured";
+      tgState.className = "sstate";
+    }
+    document.getElementById("tgChat").value = s.telegram.chatId || "";
+    document.getElementById("tgThreshold").value = s.telegram.threshold;
+  } catch {
+    document.getElementById("aliState").textContent = "cannot reach server";
+    document.getElementById("tgState").textContent = "cannot reach server";
+  }
+}
+
+async function saveAli() {
+  const msg = document.getElementById("aliMsg");
+  const btn = document.getElementById("aliSave");
+  msg.textContent = "saving…"; msg.className = "smsg";
+  btn.disabled = true;
+  try {
+    const v = document.getElementById("aliCookie").value.trim();
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alibabaCookie: v }),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = j.error || "save failed"; msg.className = "smsg err"; }
+    else {
+      msg.textContent = v ? "saved — card updates on the next 10-minute check" : "cleared";
+      msg.className = "smsg ok";
+      document.getElementById("aliCookie").value = "";
+      loadSettings();
+    }
+  } catch (e) {
+    msg.textContent = "save failed: " + e.message; msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveTg() {
+  const msg = document.getElementById("tgMsg");
+  const btn = document.getElementById("tgSave");
+  btn.disabled = true;
+  msg.textContent = "saving…"; msg.className = "smsg";
+  const body = {
+    telegram: {
+      chatId: document.getElementById("tgChat").value.trim(),
+      threshold: Number(document.getElementById("tgThreshold").value),
+    },
+  };
+  const tok = document.getElementById("tgToken").value.trim();
+  if (tok) body.telegram.token = tok;
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = j.error || "save failed"; msg.className = "smsg err"; }
+    else {
+      msg.textContent = "saved"; msg.className = "smsg ok";
+      document.getElementById("tgToken").value = "";
+      loadSettings();
+    }
+  } catch (e) {
+    msg.textContent = "save failed: " + e.message; msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function testTg() {
+  const msg = document.getElementById("tgMsg");
+  const btn = document.getElementById("tgTest");
+  btn.disabled = true;
+  msg.textContent = "sending…"; msg.className = "smsg";
+  try {
+    const r = await fetch("/api/telegram-test", { method: "POST" });
+    const j = await r.json();
+    if (r.ok && j.ok) { msg.textContent = "sent — check Telegram"; msg.className = "smsg ok"; }
+    else { msg.textContent = "failed: " + (j.error || j.detail || "unknown"); msg.className = "smsg err"; }
+  } catch (e) {
+    msg.textContent = "failed: " + e.message; msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+tickClock();
+setInterval(tickClock, 1000);
+setInterval(tickCountdowns, 1000);
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>

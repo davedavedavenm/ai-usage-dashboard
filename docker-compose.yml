@@ -1,0 +1,12 @@
+services:
+  ai-usage-dashboard:
+    build: .
+    image: ai-usage-dashboard:latest
+    container_name: ai-usage-dashboard
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    environment:
+      - INGEST_KEY=${INGEST_KEY}
+    volumes:
+      - ./data:/app/data
