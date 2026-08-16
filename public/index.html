@@ -38,7 +38,7 @@
     background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px);
     opacity: .5;
   }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 22px 60px; }
+  .wrap { max-width: 1720px; margin: 0 auto; padding: 28px 22px 60px; }
 
   header.masthead {
     display: flex; align-items: flex-end; justify-content: space-between;
@@ -84,7 +84,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
   }
   .card {
@@ -125,15 +125,15 @@
   .card.state-crit .bignum { animation: pulse 1.6s infinite; }
   .heroside { min-width: 0; }
   .wtag2 {
-    display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em;
-    border: 1px solid var(--panel-edge); border-radius: 3px; padding: 3px 8px;
+    display: inline-block; font-family: var(--font-mono); font-size: 12px; letter-spacing: .12em;
+    border: 1px solid var(--panel-edge); border-radius: 3px; padding: 3px 9px;
     color: var(--ink); text-transform: uppercase;
   }
   .hreset2 { font-family: var(--font-mono); font-size: 13.5px; color: var(--ink-dim); margin-top: 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .hreset2 b { color: var(--ink); font-weight: 600; }
   .minis { margin-top: 13px; border-top: 1px dashed #222835; padding-top: 10px; display: grid; gap: 8px; }
-  .mini { display: grid; grid-template-columns: 36px 1fr 44px auto; gap: 10px; align-items: center; }
-  .mini .mtag { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; color: var(--ink-dim); }
+  .mini { display: grid; grid-template-columns: auto 1fr 52px auto; gap: 8px 10px; align-items: center; }
+  .mini .mtag { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; color: var(--ink-dim); white-space: nowrap; text-transform: uppercase; }
   .mini .mmeter { height: 5px; background: #1b202a; border-radius: 3px; overflow: hidden; }
   .mini .mmeter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
   .mini .mmeter.low i { background: var(--amber); }
@@ -335,10 +335,15 @@ function fmtRemaining(ms) {
   if (ms <= 0) return "any moment";
   const m = Math.floor(ms / 60000);
   if (m < 1) return "less than a minute";
-  if (m < 60) return m + "m";
+  if (m < 60) return m + (m === 1 ? " minute" : " minutes");
   const h = Math.floor(m / 60);
-  if (h < 24) return h + "h " + (m % 60) + "m";
-  return Math.floor(h / 24) + "d " + (h % 24) + "h";
+  if (h < 24) {
+    const hm = m % 60;
+    return h + (h === 1 ? " hour" : " hours") + (hm ? " " + hm + (hm === 1 ? " minute" : " minutes") : "");
+  }
+  const d = Math.floor(h / 24);
+  const hh = h % 24;
+  return d + (d === 1 ? " day" : " days") + (hh ? " " + hh + (hh === 1 ? " hour" : " hours") : "");
 }
 function fmtClock(iso) {
   const d = new Date(iso);
@@ -365,14 +370,11 @@ function sparkSVG(id) {
 }
 
 function windowTag(w, name) {
-  if (/5h|fivehour|rolling/i.test(w || "")) return "5H";
-  if (/weekly/i.test(w || "")) return "WK";
-  if (/monthly/i.test(w || "")) return "MO";
-  if (/mcp|tool/i.test(w || "")) return "MCP";
-  const base = (name || w || "").replace(/\(limited\)/gi, "").trim().toUpperCase();
-  const m = /^(LAST\s+\d+H|\d+H|THIS\s+WEEK|THIS\s+MONTH|TOOLS?|MCP)/.exec(base);
-  if (m) return m[1].replace(/\s+/g, "");
-  return base.slice(0, 4) || "—";
+  if (/5h|fivehour|rolling/i.test(w || "")) return "Last 5 hours";
+  if (/weekly/i.test(w || "")) return "This week";
+  if (/monthly/i.test(w || "")) return "This month";
+  if (/mcp|tool/i.test(w || "")) return "Tools (MCP)";
+  return (name || w || "—");
 }
 const WIN_ORDER = { "5h": 0, fiveHour: 0, rolling: 0, weekly: 1, monthly: 2, mcp: 3 };
 function sortWindows(a, b) {
@@ -516,9 +518,10 @@ function updateSync(record) {
     chip.className = "chip bad"; text.textContent = "No data yet"; return;
   }
   const ageMin = Math.floor((Date.now() - record.receivedAt) / 60000);
-  if (ageMin > 60) { chip.className = "chip bad"; text.textContent = `Out of date · ${ageMin}m`; }
-  else if (ageMin > 20) { chip.className = "chip warn"; text.textContent = `Out of date · ${ageMin}m`; }
-  else { chip.className = "chip"; text.textContent = `Updated ${ageMin < 1 ? "<1" : ageMin}m ago`; }
+  const minWord = (n) => n + (n === 1 ? " minute" : " minutes");
+  if (ageMin > 60) { chip.className = "chip bad"; text.textContent = `Out of date · ${minWord(ageMin)}`; }
+  else if (ageMin > 20) { chip.className = "chip warn"; text.textContent = `Out of date · ${minWord(ageMin)}`; }
+  else { chip.className = "chip"; text.textContent = `Updated ${ageMin < 1 ? "just now" : minWord(ageMin) + " ago"}`; }
 }
 
 function tickCountdowns() {
