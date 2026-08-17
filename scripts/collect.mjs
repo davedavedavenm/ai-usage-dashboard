@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
+import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AUTH_FILE = process.env.AIUD_AUTH_FILE || join(homedir(), ".local", "share", "opencode", "auth.json");
@@ -507,10 +508,13 @@ async function main() {
   }
   for (const id of STATUS_PROVIDERS) {
     if (providers[id]) continue;
-    if (id === "anthropic" && state.anthropic429Until > Date.now()) {
-      const mins = Math.ceil((state.anthropic429Until - Date.now()) / 60000);
-      providers.anthropic = { status: "error", error: `Anthropic quota probe paused after HTTP 429; retry in ~${mins}m.` };
-      continue;
+    if (id === "anthropic") {
+      await refreshClaudeTokenIfNeeded();
+      if (state.anthropic429Until > Date.now()) {
+        const mins = Math.ceil((state.anthropic429Until - Date.now()) / 60000);
+        providers.anthropic = { status: "error", error: `Anthropic quota probe paused after HTTP 429; retry in ~${mins}m.` };
+        continue;
+      }
     }
     const cli = runStatusCli(id);
     if (cli.error) continue;
@@ -522,6 +526,9 @@ async function main() {
       providers[id] = r;
       if (id === "anthropic" && r.status === "error" && /429/.test(r.error)) {
         state.anthropic429Until = Date.now() + ANTHROPIC_429_COOLDOWN_MS;
+        writeState(state);
+      } else if (id === "anthropic" && r.status === "ok" && state.anthropic429Until) {
+        delete state.anthropic429Until;
         writeState(state);
       }
     }
