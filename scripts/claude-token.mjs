@@ -13,9 +13,27 @@ const CLIENT_IDS = [
   "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
   "https://claude.ai/oauth/claude-code-client-metadata",
 ];
+const DEFAULT_SCOPES = [
+  "user:profile",
+  "user:inference",
+  "user:sessions:claude_code",
+  "user:mcp_servers",
+  "user:file_upload",
+];
 const REFRESH_BUFFER_MS = 30 * 60 * 1000;
 const MIN_ATTEMPT_INTERVAL_MS = 15 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+
+function credentialScopes(oauth) {
+  const raw = oauth?.scopes;
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? Object.values(raw)
+      : [];
+  const scopes = list.filter((s) => typeof s === "string" && s.trim());
+  return scopes.length ? scopes : DEFAULT_SCOPES;
+}
 
 function readJson(file) {
   try {
@@ -42,14 +60,15 @@ function writeSidecar(patch) {
   writeJsonAtomic(SIDECAR_PATH, { ...readSidecar(), ...patch });
 }
 
-async function tryRefresh(refreshToken, clientId) {
+async function tryRefresh(refreshToken, clientId, scope) {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", "user-agent": "anthropic" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: clientId,
+      scope,
     }),
   });
   const text = await res.text();
@@ -114,9 +133,10 @@ export async function refreshClaudeTokenIfNeeded({ force = false } = {}) {
 
   writeSidecar({ lastAttemptAt: now });
 
+  const scope = credentialScopes(oauth).join(" ");
   let last = null;
   for (const clientId of CLIENT_IDS) {
-    last = await tryRefresh(oauth.refreshToken, clientId);
+    last = await tryRefresh(oauth.refreshToken, clientId, scope);
     if (last.status === 200 && last.data) {
       applyTokens(cred, last.data);
       writeJsonAtomic(CLAUDE_CREDENTIALS_PATH, cred);
