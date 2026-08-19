@@ -5,6 +5,7 @@ import { join, dirname } from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
+import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AUTH_FILE = process.env.AIUD_AUTH_FILE || join(homedir(), ".local", "share", "opencode", "auth.json");
@@ -502,7 +503,14 @@ async function main() {
   const dashSettings = readDashboardSettings();
   const aliCookie = (typeof dashSettings.alibabaCookie === "string" && dashSettings.alibabaCookie) ||
     envValue(readParentEnv(), "AIUD_ALIBABA_COOKIE").replace(/^["']|["']$/g, "");
-  direct["alibaba-coding-plan"] = await fetchQwen(aliCookie);
+  const qwenKey = resolveQwenApiKey({
+    auth,
+    settings: dashSettings,
+    env: envValue(readParentEnv(), "AIUD_QWEN_API_KEY"),
+  });
+  direct["alibaba-coding-plan"] = qwenKey
+    ? await fetchQwenTokenPlan(qwenKey)
+    : await fetchQwen(aliCookie);
   for (const [id, r] of Object.entries(direct)) {
     if (r.status !== "unavailable") providers[id] = r;
   }

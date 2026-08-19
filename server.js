@@ -57,6 +57,10 @@ function settingsView() {
       cookieTruncated: nonAscii || /…|\.\.\./.test(cookie),
       cookieNames: cookieNames(cookie).slice(0, 40),
     },
+    qwen: {
+      apiKeySet: typeof s.qwenApiKey === "string" && s.qwenApiKey.length > 20,
+      apiKeyMask: maskSecret(typeof s.qwenApiKey === "string" ? s.qwenApiKey : ""),
+    },
   };
 }
 
@@ -168,6 +172,12 @@ const server = http.createServer((req, res) => {
         else if (/[^\x20-\x7E]/.test(c)) return send(422, JSON.stringify({ error: "cookie contains non-ASCII characters — it was copied truncated (DevTools shows an ellipsis). Copy via right-click the request → Copy → Copy as cURL (bash), then take the cookie: value." }));
         else if (c.length < 300) return send(422, '{"error":"cookie looks too short — a full Alibaba console cookie is usually 1500+ characters"}');
         else s.alibabaCookie = c;
+      }
+      if (typeof parsed.qwenApiKey === "string") {
+        const k = parsed.qwenApiKey.trim();
+        if (k === "") delete s.qwenApiKey;
+        else if (/[^\x20-\x7E]/.test(k)) return send(422, '{"error":"API key contains non-ASCII characters"}');
+        else s.qwenApiKey = k;
       }
       try {
         writeSettings(s);
