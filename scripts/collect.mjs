@@ -508,9 +508,34 @@ async function main() {
     settings: dashSettings,
     env: envValue(readParentEnv(), "AIUD_QWEN_API_KEY"),
   });
-  direct["alibaba-coding-plan"] = qwenKey
-    ? await fetchQwenTokenPlan(qwenKey)
-    : await fetchQwen(aliCookie);
+  {
+    let qwenResult = { status: "unavailable" };
+    let cookieFailed = false;
+    if (aliCookie) {
+      qwenResult = await fetchQwen(aliCookie);
+      if (qwenResult.status === "error" && /session expired|NotLogined|NeedLogin/i.test(qwenResult.error || "")) {
+        cookieFailed = true;
+      }
+    }
+    if (qwenResult.status !== "ok" && qwenKey) {
+      qwenResult = await fetchQwenTokenPlan(qwenKey);
+    }
+    direct["alibaba-coding-plan"] = qwenResult;
+    if (cookieFailed) {
+      state.aliCookieExpiryAlertSent = state.aliCookieExpiryAlertSent || 0;
+      const ONE_HOUR = 3600 * 1000;
+      if (Date.now() - state.aliCookieExpiryAlertSent > ONE_HOUR) {
+        const alertCfg = readAlertConfig();
+        if (alertCfg.token && alertCfg.chatId) {
+          const msg = "⚠️ <b>Qwen cookie expired</b>\nThe Alibaba console session has expired. Re-paste a fresh cookie in the dashboard Settings tab to restore usage percentages.\n" + DASHBOARD_URL;
+          const result = await sendTelegram(alertCfg, msg);
+          state.aliCookieExpiryAlertSent = Date.now();
+          state.aliCookieExpiryAlertResult = result;
+          writeState(state);
+        }
+      }
+    }
+  }
   for (const [id, r] of Object.entries(direct)) {
     if (r.status !== "unavailable") providers[id] = r;
   }
