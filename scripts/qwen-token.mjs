@@ -138,7 +138,11 @@ export function resolveQwenApiKey({ auth, settings, env }) {
   if (typeof settings?.qwenApiKey === "string" && settings.qwenApiKey.trim()) {
     return settings.qwenApiKey.trim();
   }
-  if (env && env.AIUD_QWEN_API_KEY) return env;
+  // env may be the raw key string (collect.mjs) or an env-like object.
+  if (typeof env === "string" && env.trim()) return env.trim();
+  if (env && typeof env.AIUD_QWEN_API_KEY === "string" && env.AIUD_QWEN_API_KEY.trim()) {
+    return env.AIUD_QWEN_API_KEY.trim();
+  }
   for (const k of ["bailian-token-plan-personal", "alibaba-token-plan"]) {
     const e = auth?.[k];
     if (e && e.type === "api" && typeof e.key === "string" && e.key.trim()) return e.key.trim();

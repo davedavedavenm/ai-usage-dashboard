@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@slkiser/opencode-quota": "^4.8.1"
+    "@slkiser/opencode-quota": "^4.8.1",
+    "playwright": "^1.62.1"
   }
 }

@@ -15,9 +15,10 @@
  * `refresh` keeps it alive; `export` pushes cookies to the dashboard settings.
  */
 import { chromium } from "playwright";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 
 const PROFILE_DIR = process.env.ALI_PROFILE_DIR || join(homedir(), ".ali-session-profile");
 const SETTINGS_PATH = process.env.AIUD_SETTINGS_PATH ||
@@ -71,6 +72,20 @@ function parseCookieStr(header) {
 
 function cookieHeaderFromPairs(pairs) {
   return pairs.map(p => `${p.name}=${p.value}`).join("; ");
+}
+
+const EXPORT_ORIGINS = [
+  "https://modelstudio.console.alibabacloud.com",
+  "https://bailian-singapore-cs.console.alibabacloud.com",
+  "https://bailian-singapore-cs.alibabacloud.com",
+  "https://account.alibabacloud.com",
+  "https://www.alibabacloud.com",
+  "https://account.aliyun.com",
+];
+
+async function profileCookieHeader(context) {
+  const cookies = await context.cookies(EXPORT_ORIGINS);
+  return cookies.filter(c => c.value).map(c => `${c.name}=${c.value}`).join("; ");
 }
 
 async function doLogin() {
@@ -128,6 +143,21 @@ async function doRefresh() {
       process.exit(2);
     }
 
+    // The SPA shell loads with HTTP 200 even when logged out, so the URL/form
+    // check alone is not enough — verify against the real usage API.
+    let check = await verifyAliCookie(await profileCookieHeader(context));
+    if (!check.ok) {
+      // Session cookies may still be settling; give the SPA one more chance.
+      await page.reload({ waitUntil: "domcontentloaded", timeout: TIMEOUT_MS }).catch(() => {});
+      await page.waitForTimeout(8000);
+      check = await verifyAliCookie(await profileCookieHeader(context));
+    }
+    if (!check.ok) {
+      console.error(`Session expired (usage API: ${check.reason}) — re-login required. Run: node alijar.mjs login`);
+      await context.close();
+      process.exit(2);
+    }
+
     console.log("Session refreshed OK.");
     await context.close();
   } catch (e) {
@@ -155,14 +185,7 @@ async function doExport() {
     }
 
     // Extract all cookies from the browser
-    const freshCookies = await context.cookies([
-      "https://modelstudio.console.alibabacloud.com",
-      "https://bailian-singapore-cs.console.alibabacloud.com",
-      "https://bailian-singapore-cs.alibabacloud.com",
-      "https://account.alibabacloud.com",
-      "https://www.alibabacloud.com",
-      "https://account.aliyun.com",
-    ]);
+    const freshCookies = await context.cookies(EXPORT_ORIGINS);
 
     // Merge fresh cookies with existing cookie — fresh override, existing kept as fallback
     const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
@@ -183,8 +206,17 @@ async function doExport() {
       process.exit(1);
     }
 
+    // Verify the merged cookie actually works before persisting it, so a dead
+    // session never overwrites settings.json with a stale/useless cookie.
+    const check = await verifyAliCookie(newHeader);
+    if (!check.ok) {
+      console.error(`Exported cookie failed verification (${check.reason}) — not saving. Re-login required: node alijar.mjs login`);
+      await context.close();
+      process.exit(2);
+    }
+
     settings.alibabaCookie = newHeader;
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+    writeSettingsAtomic(SETTINGS_PATH, settings);
     console.log(`Exported ${cookieMap.size} cookies (${newHeader.length} chars) to ${SETTINGS_PATH}`);
   } catch (e) {
     console.error("Export error:", e.message);
@@ -207,6 +239,13 @@ async function doCheck() {
     const hasLogin = await page.$('input[type="password"], input[name="password"], #fm-login-id');
     if (hasLogin || /login\.htm|login\.aliyun|passport/i.test(url)) {
       console.log("EXPIRED");
+      await context.close();
+      process.exit(1);
+    }
+
+    const check = await verifyAliCookie(await profileCookieHeader(context));
+    if (!check.ok) {
+      console.log(`EXPIRED (${check.reason})`);
       await context.close();
       process.exit(1);
     }

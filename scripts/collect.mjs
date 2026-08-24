@@ -6,33 +6,40 @@ import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
+import { ALI_APIS, aliCall, resolveAliSecToken } from "./ali-session.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+function readParentEnv() {
+  try {
+    return readFileSync(join(HERE, "..", ".env"), "utf8").split("\n");
+  } catch {
+    return [];
+  }
+}
+
+function envValue(lines, name) {
+  const m = lines.map(l => l.trim()).filter(Boolean).find(l => l.startsWith(name + "="));
+  return m ? m.slice(name.length + 1).trim() : "";
+}
+
 const AUTH_FILE = process.env.AIUD_AUTH_FILE || join(homedir(), ".local", "share", "opencode", "auth.json");
 const INGEST_URL = process.env.AIUD_INGEST_URL || "http://127.0.0.1:8099/api/ingest";
 const ZAI_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const GO_URL = "https://opencode.ai/zen/go/v1/usage";
 const CLI_BIN = process.env.AIUD_CLI_BIN || join(HERE, "node_modules", ".bin", "opencode-quota");
-const DASHBOARD_URL = process.env.AIUD_DASHBOARD_URL || "http://localhost:8099";
-const COLLECTOR_NAME = process.env.AIUD_COLLECTOR_NAME || "collector";
+// cron does not source .env — fall back to the stack .env file for AIUD_* overrides
+const DASHBOARD_URL = process.env.AIUD_DASHBOARD_URL || envValue(readParentEnv(), "AIUD_DASHBOARD_URL") || "http://localhost:8099";
+const COLLECTOR_NAME = process.env.AIUD_COLLECTOR_NAME || envValue(readParentEnv(), "AIUD_COLLECTOR_NAME") || "collector";
 const REQ_TIMEOUT_MS = 20000;
 
 const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "Tools (MCP)" };
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
 const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity", "google-gemini-cli", "google-agy"];
 const ALERT_THRESHOLD_DEFAULT = 15;
+// Cookie-expiry is an action-needed alert; once per day avoids hourly spam.
+const ALI_COOKIE_EXPIRY_ALERT_INTERVAL_MS = 24 * 3600 * 1000;
 const TG_API = "https://api.telegram.org";
-const ALI_QUOTA_BASE = "https://bailian-singapore-cs.alibabacloud.com";
-const ALI_CONSOLE = "https://modelstudio.console.alibabacloud.com";
-const ALI_FE_URL = ALI_CONSOLE + "/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal";
-const ALI_REGION = "ap-southeast-1";
-const ALI_ACTION = "IntlBroadScopeAspnGateway";
-const ALI_CONSOLE_SITE = "MODELSTUDIO_ALBABACLOUD";
-const ALI_APIS = {
-  usage: "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage",
-  subscription: "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/subscription",
-  quotaConfig: "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/quota-config",
-};
 
 function readAuth() {
   try {
@@ -141,11 +148,6 @@ async function fetchOpenCodeGo(auth) {
   return { status: "ok", label: "OpenCode Go", entries };
 }
 
-function aliCookieValue(cookieHeader, name) {
-  const m = new RegExp("(?:^|;\\s*)" + name + "=([^;]+)").exec(cookieHeader || "");
-  return m ? m[1] : null;
-}
-
 function aliFindContaining(value, keys) {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -169,98 +171,6 @@ function aliPercent(raw) {
   if (typeof n !== "number" || !Number.isFinite(n)) return null;
   if (n >= 0 && n <= 1) return Math.round(n * 1000) / 10;
   return Math.round(n * 10) / 10;
-}
-
-function aliTraceId() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
-async function aliCall(api, cookie, secToken, extraData) {
-  const params = {
-    Api: api,
-    V: "1.0",
-    Data: {
-      ...(extraData || {}),
-      cornerstoneParam: {
-        feTraceId: aliTraceId(),
-        feURL: ALI_FE_URL,
-        protocol: "V2",
-        console: "ONE_CONSOLE",
-        productCode: "p_efm",
-        switchUserType: 3,
-        domain: "modelstudio.console.alibabacloud.com",
-        consoleSite: ALI_CONSOLE_SITE,
-        userNickName: "",
-        userPrincipalName: "",
-        xsp_lang: "en-US",
-      },
-    },
-  };
-  const body = new URLSearchParams({
-    product: "sfm_bailian",
-    action: ALI_ACTION,
-    region: ALI_REGION,
-    language: "en-US",
-    params: JSON.stringify(params),
-    ...(secToken ? { sec_token: secToken } : {}),
-  });
-  const url = ALI_QUOTA_BASE + "/data/api.json?action=" + ALI_ACTION + "&product=sfm_bailian&api=" + encodeURIComponent(api) + "&_v=undefined";
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-        "Origin": ALI_CONSOLE,
-        "Referer": ALI_FE_URL,
-        "Cookie": cookie,
-      },
-      body: body.toString(),
-      signal: ctrl.signal,
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch {}
-    if (json && typeof json === "object") {
-      for (const v of Object.values(json)) {
-        if (v && typeof v === "object" && v.errorCode) {
-          return { error: String(v.errorCode) + (v.errorMsg && v.errorMsg !== v.errorCode ? " " + v.errorMsg : "") };
-        }
-      }
-    }
-    if (res.status !== 200) return { error: "HTTP " + res.status };
-    return { json, raw: text };
-  } catch (e) {
-    return { error: String(e.message || e).slice(0, 160) };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function resolveAliSecToken(cookie) {
-  const fromCookie = aliCookieValue(cookie, "sec_token");
-  if (fromCookie) return fromCookie;
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10000);
-    const res = await fetch(ALI_FE_URL, {
-      headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36", Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    const html = await res.text();
-    const m = /sec_token["']?\s*[:=]\s*["']([A-Za-z0-9_:-]+)/.exec(html);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
 }
 
 async function fetchQwen(cookie) {
@@ -370,25 +280,12 @@ function writeState(state) {
   } catch {}
 }
 
-function readParentEnv() {
-  try {
-    return readFileSync(join(HERE, "..", ".env"), "utf8").split("\n");
-  } catch {
-    return [];
-  }
-}
-
 function readDashboardSettings() {
   try {
     return JSON.parse(readFileSync(join(HERE, "..", "data", "settings.json"), "utf8"));
   } catch {
     return {};
   }
-}
-
-function envValue(lines, name) {
-  const m = lines.map(l => l.trim()).filter(Boolean).find(l => l.startsWith(name + "="));
-  return m ? m.slice(name.length + 1).trim() : "";
 }
 
 function readAlertConfig() {
@@ -511,9 +408,11 @@ async function main() {
   {
     let qwenResult = { status: "unavailable" };
     let cookieFailed = false;
+    let cookieOk = false;
     if (aliCookie) {
       qwenResult = await fetchQwen(aliCookie);
-      if (qwenResult.status === "error" && /session expired|NotLogined|NeedLogin/i.test(qwenResult.error || "")) {
+      if (qwenResult.status === "ok") cookieOk = true;
+      else if (qwenResult.status === "error" && /session expired|NotLogined|NeedLogin/i.test(qwenResult.error || "")) {
         cookieFailed = true;
       }
     }
@@ -523,8 +422,7 @@ async function main() {
     direct["alibaba-coding-plan"] = qwenResult;
     if (cookieFailed) {
       state.aliCookieExpiryAlertSent = state.aliCookieExpiryAlertSent || 0;
-      const ONE_HOUR = 3600 * 1000;
-      if (Date.now() - state.aliCookieExpiryAlertSent > ONE_HOUR) {
+      if (Date.now() - state.aliCookieExpiryAlertSent > ALI_COOKIE_EXPIRY_ALERT_INTERVAL_MS) {
         const alertCfg = readAlertConfig();
         if (alertCfg.token && alertCfg.chatId) {
           const msg = "⚠️ <b>Qwen cookie expired</b>\nThe Alibaba console session has expired. Re-paste a fresh cookie in the dashboard Settings tab to restore usage percentages.\n" + DASHBOARD_URL;
@@ -534,6 +432,11 @@ async function main() {
           writeState(state);
         }
       }
+    } else if (cookieOk && state.aliCookieExpiryAlertSent) {
+      // Session recovered — re-arm the expiry alert so a future expiry warns immediately.
+      delete state.aliCookieExpiryAlertSent;
+      delete state.aliCookieExpiryAlertResult;
+      writeState(state);
     }
   }
   for (const [id, r] of Object.entries(direct)) {

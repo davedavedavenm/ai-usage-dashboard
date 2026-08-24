@@ -6,9 +6,14 @@
  * captures any refreshed cookies from Set-Cookie headers, merges them
  * back into the original cookie string, and saves to settings.json.
  *
+ * Validity is checked with verifyAliCookie() (real token-plan usage API call),
+ * NOT by inspecting the loginInfo response — the console SPA and loginInfo
+ * endpoint both answer 200 even when the session is dead.
+ *
  * No browser needed — just plain HTTP fetch.
  */
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
+import { verifyAliCookie, writeSettingsAtomic, ALI_UA } from "./ali-session.mjs";
 
 const SETTINGS_PATH = process.env.AIUD_SETTINGS_PATH ||
   "/home/dave/stacks/ai-usage-dashboard/data/settings.json";
@@ -58,13 +63,20 @@ async function main() {
   }
   console.log(`Current cookie: ${cookie.length} chars`);
 
-  // Step 1: Hit the console page to refresh session
+  // Authoritative check first: is the session actually alive?
+  const pre = await verifyAliCookie(cookie);
+  if (!pre.ok) {
+    console.error(`SESSION_EXPIRED (${pre.reason})`);
+    process.exit(2);
+  }
+
+  // Step 1: hit the console page to refresh session; capture Set-Cookie.
   const ctrl1 = new AbortController();
   const t1 = setTimeout(() => ctrl1.abort(), 15000);
   const pageRes = await fetch(CONSOLE_URL, {
     headers: {
       Cookie: cookie,
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+      "User-Agent": ALI_UA,
       Accept: "text/html,application/xhtml+xml",
     },
     redirect: "manual",
@@ -75,14 +87,14 @@ async function main() {
   const pageSetCookies = pageRes.headers.getSetCookie?.() || [];
   console.log(`Console page: ${pageRes.status}, Set-Cookie: ${pageSetCookies.length}`);
 
-  // Check for login redirect
+  // Hard redirect to the login page is an unambiguous expiry signal.
   const loc = pageRes.headers.get("location") || "";
   if (/login\.htm|passport/i.test(loc)) {
-    console.error("SESSION_EXPIRED");
+    console.error("SESSION_EXPIRED (login redirect)");
     process.exit(2);
   }
 
-  // Step 2: Hit the loginInfo API to get refreshed cookies
+  // Step 2: hit the loginInfo API to collect any refreshed cookies.
   const ctrl2 = new AbortController();
   const t2 = setTimeout(() => ctrl2.abort(), 15000);
   const apiRes = await fetch(ALI_API + "?action=IntlBroadScopeAspnGateway&product=sfm_bailian&api=zeldaEasy.cornerstone-portal.cs-console.loginInfo&_v=undefined", {
@@ -90,7 +102,7 @@ async function main() {
     headers: {
       Cookie: cookie,
       "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "User-Agent": ALI_UA,
       "X-Requested-With": "XMLHttpRequest",
       Referer: CONSOLE_URL,
       Origin: ALI_FE,
@@ -101,30 +113,30 @@ async function main() {
   clearTimeout(t2);
 
   const apiSetCookies = apiRes.headers.getSetCookie?.() || [];
-  const apiText = await apiRes.text();
   console.log(`loginInfo API: ${apiRes.status}, Set-Cookie: ${apiSetCookies.length}`);
 
-  // Check if the API response indicates expired session
-  if (/NotLogined|NeedLogin|Unauthorized/i.test(apiText)) {
-    console.error("SESSION_EXPIRED");
+  // Step 3: merge refreshed cookies, verify the result, then save.
+  const allSetCookies = [...pageSetCookies, ...apiSetCookies];
+  let newCookie = cookie;
+  if (allSetCookies.length > 0) {
+    const merged = mergeCookies(cookie, allSetCookies);
+    console.log(`Merged: ${allSetCookies.length} Set-Cookie headers → ${merged.length} chars`);
+    if (merged.length > 300) newCookie = merged;
+    else console.log("Merged cookie too short — keeping original");
+  } else {
+    console.log("No Set-Cookie headers — cookie unchanged");
+  }
+
+  const post = await verifyAliCookie(newCookie);
+  if (!post.ok) {
+    console.error(`SESSION_EXPIRED (post-refresh verify: ${post.reason})`);
     process.exit(2);
   }
 
-  // Step 3: Merge all Set-Cookie values back into the original cookie
-  const allSetCookies = [...pageSetCookies, ...apiSetCookies];
-  if (allSetCookies.length > 0) {
-    const newCookie = mergeCookies(cookie, allSetCookies);
-    console.log(`Merged: ${allSetCookies.length} Set-Cookie headers → ${newCookie.length} chars`);
-
-    if (newCookie.length > 300) {
-      settings.alibabaCookie = newCookie;
-      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
-      console.log("Saved updated cookie to settings.json");
-    } else {
-      console.log("Merged cookie too short — keeping original");
-    }
-  } else {
-    console.log("No Set-Cookie headers — cookie unchanged (still valid)");
+  if (newCookie !== cookie) {
+    settings.alibabaCookie = newCookie;
+    writeSettingsAtomic(SETTINGS_PATH, settings);
+    console.log("Saved updated cookie to settings.json");
   }
 
   console.log("OK");

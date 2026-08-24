@@ -83,6 +83,11 @@ the API — always masked):
   final threshold (default 15%) → 🚨 at 0%, one message per stage per provider
   window per reset period, deduped in `collector/state.json` — so you're warned
   early, never bombarded, and never told only when you're already out.
+  If the Qwen console cookie expires you get a reminder at most once per 24h
+  (re-armed as soon as the cookie works again), and the 2-hourly session
+  refresher (`refresh-and-export.sh`) validates the session against the real
+  usage API — a dead session fails loud and notifies once per day with the
+  re-login command.
 
 ## Provider coverage
 
