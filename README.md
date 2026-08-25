@@ -42,6 +42,11 @@ cd collector && npm install
 
 The ingest key must match the `INGEST_KEY` in the server `.env`.
 
+> **Repo vs deployment layout:** in this repository the collector lives in
+> `scripts/`; on the deployment host (`khpi5`, `/home/dave/stacks/ai-usage-dashboard`)
+> the same files sit in `collector/`. See `AGENTS.md` for the deploy/verify
+> protocol and `DECISIONS.md` for settled decisions.
+
 ## Connecting accounts
 
 OAuth logins run on the server and the provider's redirect lands on a
