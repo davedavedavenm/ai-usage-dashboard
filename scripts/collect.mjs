@@ -28,6 +28,15 @@ const INGEST_URL = process.env.AIUD_INGEST_URL || "http://127.0.0.1:8099/api/ing
 const ZAI_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const GO_URL = "https://opencode.ai/zen/go/v1/usage";
 const CLI_BIN = process.env.AIUD_CLI_BIN || join(HERE, "node_modules", ".bin", "opencode-quota");
+// Cron PATH (/usr/bin:/bin) lacks ~/.local/bin and /usr/local/bin, where the claude
+// binary lives — without it opencode-quota reports auth_status=unknown, skips the
+// live quota probe entirely, and the provider vanishes from the dashboard. The CLI
+// is therefore ALWAYS spawned with an augmented PATH, whatever env invoked us.
+const CLI_PATH = [
+  join(homedir(), ".local", "bin"),
+  "/usr/local/bin",
+  process.env.PATH || "/usr/bin:/bin",
+].join(":"); // ":" = PATH delimiter (not path.sep)
 // cron does not source .env — fall back to the stack .env file for AIUD_* overrides
 const DASHBOARD_URL = process.env.AIUD_DASHBOARD_URL || envValue(readParentEnv(), "AIUD_DASHBOARD_URL") || "http://localhost:8099";
 const COLLECTOR_NAME = process.env.AIUD_COLLECTOR_NAME || envValue(readParentEnv(), "AIUD_COLLECTOR_NAME") || "collector";
@@ -208,9 +217,24 @@ async function fetchQwen(cookie) {
 
 function runStatusCli(providerId) {
   if (!existsSync(CLI_BIN)) return { error: "opencode-quota CLI not found at " + CLI_BIN };
+  const childEnv = { ...process.env, PATH: CLI_PATH };
   try {
     const args = ["status", "--provider", providerId];
-    const out = execFileSync(CLI_BIN, args, { encoding: "utf8", timeout: 90000, stdio: ["ignore", "pipe", "pipe"] });
+    const out = execFileSync(CLI_BIN, args, {
+      encoding: "utf8",
+      timeout: 90000,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: childEnv,
+    });
+    if (process.env.AIUD_DEBUG_DUMP) {
+      try {
+        writeFileSync(`/tmp/aiud-cli-${providerId}.out`, out);
+        const dbg = execFileSync("sh", ["-c", 'echo "PATH=$PATH"; command -v claude || echo NO_CLAUDE_ON_CHILD_PATH'], {
+          encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"], env: childEnv,
+        });
+        writeFileSync(`/tmp/aiud-cli-${providerId}.envdbg`, dbg);
+      } catch {}
+    }
     return { text: out };
   } catch (e) {
     return { error: String(e.stderr || e.message || e).slice(0, 200) };
@@ -244,12 +268,13 @@ function entriesFromStatusSection(section) {
     if (key === "live_fetch_error" || key === "live_error_1") errors.push(value);
     if (key === "live_probe") probe = value;
     if (key === "message" && /error/i.test(value)) errors.push(value.slice(0, 200));
-    const pe = /^(.*?)\s+percent_remaining=(\d+)(?:\.\d+)?\s+reset_at=(\S+)/.exec(value);
+    const pe = /^(.*?)\s+percent_remaining=(\d+)(?:\.\d+)?(?:\s+reset_at=(\S+))?/.exec(value);
     if (pe) {
       let name = pe[1];
       name = name.replace(/^live_entry_\d+:\s*/, "").replace(/:$/, "").trim();
       const window = /weekly/i.test(name) ? "weekly" : /monthly/i.test(name) ? "monthly" : /hourly|5h/i.test(name) ? "5h" : "5h";
-      entries.push(pctEntry(name, Number(pe[2]), pe[3], window));
+      const resetAt = pe[3] && pe[3] !== "(none)" ? pe[3] : undefined;
+      entries.push(pctEntry(name, Number(pe[2]), resetAt, window));
     }
   }
   if (entries.length) return { entries, status: probe === "error" || errors.length ? "partial" : "ok", error: errors[0] };
@@ -396,6 +421,7 @@ async function main() {
   const auth = readAuth();
   const state = readState();
   const providers = {};
+  const skipped = {};
   const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(auth) };
   const dashSettings = readDashboardSettings();
   const aliCookie = (typeof dashSettings.alibabaCookie === "string" && dashSettings.alibabaCookie) ||
@@ -453,20 +479,28 @@ async function main() {
       }
     }
     const cli = runStatusCli(id);
-    if (cli.error) continue;
+    if (cli.error) {
+      skipped[id] = String(cli.error).slice(0, 160);
+      continue;
+    }
     const sections = parseStatus(cli.text);
     const sec = sections[id] || sections[id.replace(/-/g, "_")];
-    if (!sec) continue;
+    if (!sec) {
+      skipped[id] = "no status section in CLI output";
+      continue;
+    }
     const r = fetchFromStatus(id, sec);
-    if (r.status !== "unavailable") {
-      providers[id] = r;
-      if (id === "anthropic" && r.status === "error" && /429/.test(r.error)) {
-        state.anthropic429Until = Date.now() + ANTHROPIC_429_COOLDOWN_MS;
-        writeState(state);
-      } else if (id === "anthropic" && r.status === "ok" && state.anthropic429Until) {
-        delete state.anthropic429Until;
-        writeState(state);
-      }
+    if (r.status === "unavailable") {
+      skipped[id] = "no usable entries in CLI output";
+      continue;
+    }
+    providers[id] = r;
+    if (id === "anthropic" && r.status === "error" && /429/.test(r.error)) {
+      state.anthropic429Until = Date.now() + ANTHROPIC_429_COOLDOWN_MS;
+      writeState(state);
+    } else if (id === "anthropic" && r.status === "ok" && state.anthropic429Until) {
+      delete state.anthropic429Until;
+      writeState(state);
     }
   }
   const envelope = {
@@ -487,6 +521,7 @@ async function main() {
     http: res.status,
     providers: Object.fromEntries(Object.entries(providers).map(([id, r]) => [id, r.status])),
   };
+  if (Object.keys(skipped).length) line.skipped = skipped;
   console.log(JSON.stringify(line));
   process.exit(res.status === 204 ? 0 : 1);
 }
