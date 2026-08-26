@@ -85,14 +85,19 @@ optional and ignores `(none)`.
 
 The Bailian console session (real percentage windows) lives in a persistent
 Chromium profile inside the **`qwen-browser`** container (see
-`docker-compose.yml`): headful Chromium + web VNC, both published loopback-only
-on khpi5 — `127.0.0.1:3099` = desktop UI, `127.0.0.1:9333` = CDP relay.
-Login/re-login flow (~1 min):
+`docker-compose.yml`): headful Chromium + web VNC, password-protected
+(`QWEN_UI_USER`/`QWEN_UI_PASSWORD` in khpi5 stack `.env`, never in the repo)
+and published on the LAN (`192.168.1.143:3099`) plus tailnet
+(`100.65.57.85:3099`). Login/re-login flow (~1 min):
 
 ```
-ssh -L 3099:localhost:3099 khpi5     # from Windows
-# open http://localhost:3099 and sign into modelstudio.console.alibabacloud.com
+# from any LAN device:  http://192.168.1.143:3099   (or via tailnet http://100.65.57.85:3099)
+# then sign into modelstudio.console.alibabacloud.com
 ```
+
+CDP stays **loopback-only** on khpi5 (host :9333 → relay → Chromium's own
+loopback :9222) — DevTools is a remote-control channel for the whole logged-in
+profile and must never face a network.
 
 From then on everything is automatic, per collect:
 
@@ -111,10 +116,23 @@ If the session dies server-side, the card degrades to key mode ("quota
 available") until the next remote login; percentages reappear within one
 collect cycle (≤10 min). No alerts about it (see Telegram decision below).
 
-Ops gotcha: use **`docker compose up -d qwen-browser cdp-relay`** (recreate),
-never plain `docker restart qwen-browser`. After a restart the headful
-autostart can wedge — desktop up, zero chromium processes, nothing in logs
-(observed 2026-08-26); cold recreate reliably clears it.
+**Resilience layers (both live on khpi5):**
+- *Inside* the container, `/config/.config/labwc/autostart`
+  (repo copy: `scripts/qwen-labwc-autostart.sh`) is a supervising loop that
+  relaunches Chromium whenever no chromium process is running and cleans stale
+  profile singleton locks first. This exists because the stock image autostart
+  called `wrapped-chromium` once with all output discarded (`> /dev/null`),
+  so one flaky launch left a dead desktop — no processes, no logs
+  (observed twice on 2026-08-26). Recreate-proof (volume persists) and it
+  never touches a running instance mid-login.
+- *Outside*, the */2 cron `qwen-watchdog.sh` backstop force-recreates both
+  containers when CDP on :9333 fails twice, 75 s apart. With the supervisor
+  this rarely fires; keep it for kasmvnc-level death.
+
+Ops note: after manual intervention prefer recreate over restart
+(`docker compose up -d qwen-browser cdp-relay`); plain `docker restart` can
+wedge headful autostart. Chromium launch diagnostics land in
+`data/qwen-browser/chrome-launch.log`.
 
 **Superseded history:** before this, cookies were hand-pasted into Settings
 when they expired. Before *that*, `alijar.mjs` tried unattended browser
@@ -189,6 +207,7 @@ required locally beyond this checkout.
 ```
 */10 * * * *  cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-collect.lock node collect.mjs >> collect.log 2>&1
 0 */2 * * *   cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-keepalive.lock node keepalive.mjs >> keepalive.log 2>&1
+*/2 * * * *   cd stacks/ai-usage-dashboard && flock -n /tmp/aiud-qwen-watch.lock bash collector/qwen-watchdog.sh >> data/qwen-watchdog.log 2>&1
 ```
 
 Gotchas: cron fires in **local** time (BST = UTC+1) while collect.log

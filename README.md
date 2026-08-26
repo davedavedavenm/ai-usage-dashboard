@@ -77,16 +77,18 @@ the API — always masked):
 
 - **Qwen (Alibaba Token Plan)**: percentages come from a logged-in console
   session held in the dedicated `qwen-browser` container on khpi5 (headful
-  Chromium with a remote desktop, loopback-only). The collector auto-grabs
+  Chromium with a password-protected remote desktop). The collector auto-grabs
   cookies from that live profile over CDP every cycle — **no cookie pasting**.
-  To log in or re-login (once every few weeks): `ssh -L 3099:localhost:3099
-  khpi5`, then open `http://localhost:3099` and sign into
+  To log in or re-login: open `http://192.168.1.143:3099` (or via tailnet
+  `http://100.65.57.85:3099`; creds in khpi5 stack `.env` as `QWEN_UI_USER` /
+  `QWEN_UI_PASSWORD`) and sign into
   `modelstudio.console.alibabacloud.com`. Verified grabs are mirrored into
   `data/settings.json` for the 2-hourly keepalive. If the session dies
   server-side, the card silently falls back to availability mode from the
   token-plan API key until you log in again; percentages reappear within 10
-  minutes of login. Ops note: if the browser inside doesn't start, recreate it
-  (`docker compose up -d qwen-browser cdp-relay`) rather than `docker restart`.
+  minutes of login. Self-healing: a supervisor loop inside the container
+  relaunches Chromium if it dies, and a */2 watchdog cron recreates the whole
+  thing if CDP stops answering (see DECISIONS.md).
 - **Telegram alerts**: create a bot with @BotFather, send it `/start`, then
   either find your chat ID via
   `https://api.telegram.org/bot<TOKEN>/getUpdates` or use the Settings tab's

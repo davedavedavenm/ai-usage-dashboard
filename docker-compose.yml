@@ -12,10 +12,9 @@ services:
       - ./data:/app/data
 
   # Logged-in Chromium holding the Alibaba Bailian session (Qwen percentages).
-  # Dave remotes into the desktop via SSH tunnel to log in / re-login; the
-  # collector grabs cookies from this live profile over CDP. Both ports are
-  # loopback-only on the host — reach the UI with:
-  #   ssh -L 3099:localhost:3099 khpi5   →   http://localhost:3099
+  # The desktop UI is password-protected (CUSTOM_USER/PASSWORD from stack
+  # .env) and published on the LAN + tailnet; CDP stays loopback-only behind
+  # the cdp-relay sidecar below — never expose DevTools to a network.
   qwen-browser:
     image: lscr.io/linuxserver/chromium:latest
     container_name: qwen-browser
@@ -25,13 +24,16 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/London
+      - CUSTOM_USER=${QWEN_UI_USER:?set QWEN_UI_USER in stack .env}
+      - PASSWORD=${QWEN_UI_PASSWORD:?set QWEN_UI_PASSWORD in stack .env}
       # Chrome ≥136 refuses CDP on a default profile dir, hence explicit
       # --user-data-dir. Chromium now hard-binds CDP to its own loopback
       # (--remote-debugging-address is ignored), so 9222 stays internal and
       # the cdp-relay sidecar below publishes it.
       - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile
     ports:
-      - "127.0.0.1:3099:3000"
+      - "192.168.1.143:3099:3000"
+      - "100.65.57.85:3099:3000"
       - "127.0.0.1:9333:9333"
     volumes:
       - ./data/qwen-browser:/config
