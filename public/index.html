@@ -315,7 +315,7 @@ const META = {
   zai:                  { name: "Z.ai",              sub: "GLM Coding Plan",       accent: "#ec4899", hint: "Check <code>opencode auth</code> for zai-coding-plan." },
   "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Check <code>opencode auth</code> for opencode-go." },
   "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
-  "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Token Plan quota is console-only (no API-key endpoint). To enable: log into <code>modelstudio.console.alibabacloud.com</code>, DevTools → Network → right-click an <code>api.json</code> request → Copy as cURL (bash) → paste the <code>cookie:</code> value in the Settings tab. Re-paste when it expires." },
+  "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Percentages come from a logged-in session in the <code>qwen-browser</code> container on khpi5, which the collector auto-grabs — no pasting. To log in or re-login: run <code>ssh -L 3099:localhost:3099 khpi5</code>, open <code>http://localhost:3099</code>, and sign into <code>modelstudio.console.alibabacloud.com</code>. Percentages reappear within 10 minutes." },
   "google-gemini-cli":  { name: "Gemini CLI",        sub: "Google",                accent: "#a3e635" },
   "google-agy":         { name: "AI Studio",         sub: "Google AGY",            accent: "#06b6d4" },
   "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },

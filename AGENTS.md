@@ -70,10 +70,12 @@ browser automation in this stack anymore.
   lives in `runStatusCli()` now — don't remove it.
 - **Trust HTTP 200 from Alibaba pages** as session-alive proof. Only the real
   usage-API call (`verifyAliCookie`) counts.
-- **Reintroduce browser automation or cookie-expiry alerts for Qwen.** Settled:
-  HTTP keepalive + key fallback + silent degradation (DECISIONS.md). If
-  percentages vanish from the Qwen card, the fix is one cookie paste in
-  Settings — not new machinery.
+- **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
+  (2026-08-26): percentages auto-grab from the `qwen-browser` container's live
+  profile over CDP. When the Qwen card loses percentages: the session died —
+  remote in (`ssh -L 3099:localhost:3099 khpi5` → `http://localhost:3099`) and
+  log in again; if the browser isn't up, cold-recreate with
+  `docker compose up -d qwen-browser cdp-relay`, don't `docker restart`.
 - **Start a second collector** for testing without `flock -n` on the same lock.
 - **Compare file copies by eye.** Use LF-normalized md5 both sides
   (`sed 's/\r$//' f | md5sum` remote; normalize CRLF→LF locally).
@@ -86,8 +88,9 @@ browser automation in this stack anymore.
 Full table with renewal paths in DECISIONS.md. One-liners:
 Claude/ChatGPT = OAuth auto-refresh (`claude-token.mjs` / `chatgpt-token.mjs`);
 Antigravity =
-opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = console session
-kept alive by HTTP (`keepalive.mjs`) with token-plan key fallback. Telegram
+opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = live login held
+in the `qwen-browser` container, auto-grabbed over CDP, with token-plan key
+fallback. Telegram
 bot "AI Usage Manager": staged allowance alerts only, dedupe in `state.json`,
 config only in khpi5 `data/settings.json`.
 

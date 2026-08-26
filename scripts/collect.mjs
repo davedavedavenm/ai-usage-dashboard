@@ -7,7 +7,8 @@ import { fileURLToPath } from "url";
 import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
 import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
-import { ALI_APIS, aliCall, resolveAliSecToken } from "./ali-session.mjs";
+import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
+import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -431,14 +432,36 @@ async function main() {
     env: envValue(readParentEnv(), "AIUD_QWEN_API_KEY"),
   });
   {
+    // Qwen source order: (1) live logged-in Chromium profile inside the
+    // qwen-browser container, grabbed over CDP and verified against the real
+    // usage API — verified grabs also write back into settings.json so
+    // keepalive stays consistent; (2) the settings/env cookie as before;
+    // (3) token-plan API key fallback. Login happens once, via remote desktop.
+    let qwenCookie = aliCookie || "";
+    {
+      const grabbed = await grabAliCookieFromBrowser();
+      if (grabbed.ok) {
+        const ver = await verifyAliCookie(grabbed.cookie);
+        if (ver.ok) {
+          qwenCookie = grabbed.cookie;
+          const dash = readDashboardSettings();
+          if ((dash.alibabaCookie || "") !== grabbed.cookie) {
+            dash.alibabaCookie = grabbed.cookie;
+            try {
+              writeSettingsAtomic(join(HERE, "..", "data", "settings.json"), dash);
+            } catch {}
+          }
+        }
+      }
+    }
     // Qwen has two complementary sources: the console session (real percentage
-    // windows, kept alive automatically by keepalive + profile refresh/export)
-    // and the token-plan API key (always answers: available / exhausted+reset).
-    // Cookie first for fidelity; key takes over silently when it is dead/absent.
-    let qwenResult = aliCookie ? await fetchQwen(aliCookie) : { status: "unavailable" };
+    // windows) and the token-plan API key (always answers: available /
+    // exhausted+reset). Cookie first for fidelity; key takes over silently
+    // when it is dead/absent.
+    let qwenResult = qwenCookie ? await fetchQwen(qwenCookie) : { status: "unavailable" };
     if (qwenResult.status !== "ok" && qwenKey) {
       const keyResult = await fetchQwenTokenPlan(qwenKey);
-      if (keyResult.status === "ok" || !aliCookie || keyResult.status !== "unavailable") {
+      if (keyResult.status === "ok" || !qwenCookie || keyResult.status !== "unavailable") {
         qwenResult = keyResult;
       }
     }

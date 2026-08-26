@@ -81,34 +81,51 @@ different code paths did `continue` without a trace.
 entire 5-hour window even on successful probes. Parser now treats reset_at as
 optional and ignores `(none)`.
 
-## Qwen runs on console session + token-plan key fallback; browser automation retired — Active
+## Qwen runs on a dedicated remote-desktop browser profile; collector auto-grabs via CDP — Active
 
-Two complementary sources, checked in this order by `collect.mjs`:
+The Bailian console session (real percentage windows) lives in a persistent
+Chromium profile inside the **`qwen-browser`** container (see
+`docker-compose.yml`): headful Chromium + web VNC, both published loopback-only
+on khpi5 — `127.0.0.1:3099` = desktop UI, `127.0.0.1:9333` = CDP relay.
+Login/re-login flow (~1 min):
 
-1. **Console session** (`alibabaCookie` in khpi5 `data/settings.json`) → real
-   percentage windows (5h + weekly) from the token-plan usage API. Kept alive
-   automatically by the 2-hourly `keepalive.mjs` cron (plain HTTP: hits the
-   console page + loginInfo endpoint, merges Set-Cookie, verifies against the
-   real usage API before saving). No browser, no Xvfb, no profile.
-2. **Token-plan API key** (auth.json `bailian-token-plan-personal` /
-   `alibaba-token-plan`, or Settings tab) → always answers even with no live
-   session: "quota available" or 0% + reset time parsed from the 429 body.
+```
+ssh -L 3099:localhost:3099 khpi5     # from Windows
+# open http://localhost:3099 and sign into modelstudio.console.alibabacloud.com
+```
 
-If the session eventually dies server-side, the card degrades silently to key
-mode — no Telegram message, nothing to restart. Restoring percentages is one
-cookie paste in the Settings tab (Copy as cURL from an api.json request),
-whenever convenient.
+From then on everything is automatic, per collect:
 
-**Retired (2026-08-26):** `alijar.mjs` headless-browser login/refresh/export
-cycle and its crons, `refresh-and-export.sh`, `keepalive-and-collect.sh`,
-`tg-notify.mjs`, and the daily "Qwen cookie expired" Telegram alert. Reasons,
-measured on khpi5: the browser profile's session died 2026-08-25 while the
-settings cookie stayed valid (split-brain), `refresh` failed its own
-verification seconds before `export` passed it on the same cookies, the CLI
-has no alibaba-coding-plan probe, and Alibaba exposes **no key-authenticated
-percentage endpoint** (usage/billing/quota candidates all 404). The browser
-added only a re-login ability that never worked without human QR entry.
-Rollback if ever needed: git history retains the deleted scripts.
+1. `cdp-cookies.mjs` pulls the alibaba/aliyun cookie jar out of the live
+   browser over CDP (`Storage.getCookies`). Chromium 111+ hard-binds DevTools
+   to its own loopback (`--remote-debugging-address` is ignored), so a socat
+   sidecar sharing the container's network namespace relays host :9333 →
+   container loopback :9222.
+2. The grab is verified against the real usage API (`verifyAliCookie`) before
+   use — an unverified grab is discarded silently.
+3. Verified grabs are written back into `data/settings.json`, so the 2-hourly
+   `keepalive.mjs` always works on the same jar as the browser. The live
+   profile is the single source of truth; no split-brain.
+
+If the session dies server-side, the card degrades to key mode ("quota
+available") until the next remote login; percentages reappear within one
+collect cycle (≤10 min). No alerts about it (see Telegram decision below).
+
+Ops gotcha: use **`docker compose up -d qwen-browser cdp-relay`** (recreate),
+never plain `docker restart qwen-browser`. After a restart the headful
+autostart can wedge — desktop up, zero chromium processes, nothing in logs
+(observed 2026-08-26); cold recreate reliably clears it.
+
+**Superseded history:** before this, cookies were hand-pasted into Settings
+when they expired. Before *that*, `alijar.mjs` tried unattended browser
+login/refresh/export and was retired 2026-08-26 — unattended login hit the QR
+wall, refresh failed its own verification seconds after export passed it on
+the same cookies, and the profile/settings split-brain killed sessions
+silently. Today's design deliberately keeps a real browser but makes the human
+step remote-desktop-simple instead of unattended, and kills split-brain by
+reading only from that single live profile. `alijar.mjs`,
+`refresh-ali-cookie.mjs`, `refresh-and-export.sh`, `keepalive-and-collect.sh`
+and `tg-notify.mjs` remain deleted; git history retains them.
 
 ## Per-provider auth model — Active
 
@@ -119,7 +136,7 @@ Rollback if ever needed: git history retains the deleted scripts.
 | Gemini/Antigravity | opencode-quota CLI | opencode `auth.json` Google OAuth | same pattern |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
-| Qwen (Alibaba Token Plan) | usage API via console session; token-plan key probe fallback | cookie in `data/settings.json` + `auth.json` key | fully automatic — see the Qwen decision above |
+| Qwen (Alibaba Token Plan) | usage API via live browser profile (CDP grab, verified); token-plan key probe fallback | logged-in session in `qwen-browser` container (mirrored to `data/settings.json`) + `auth.json` key | automatic except periodic remote login — see the Qwen decision above |
 
 A manual `claude login` / `opencode auth login` is a **fallback**, not part of
 normal operation. If the dashboard suggests logging in again, first check

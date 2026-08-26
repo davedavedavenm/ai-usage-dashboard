@@ -75,14 +75,18 @@ Open `http://<server>:8099/` → **Settings** (LAN only; secrets are stored in
 `data/settings.json` on the server, never committed, and never returned raw by
 the API — always masked):
 
-- **Qwen (Alibaba Token Plan)**: percentages come from the console session,
-  which the server keeps alive automatically (2-hourly HTTP keepalive). If
-  that session ever dies, the card silently falls back to availability mode
-  from the token-plan API key. To restore exact percentages: log into
-  `modelstudio.console.alibabacloud.com`, DevTools → Network → right-click an
-  `api.json` request → **Copy as cURL (bash)** → paste the `cookie:` value in
-  the Settings tab (pasting from the *Headers* pane truncates it — the
-  dashboard detects and rejects that).
+- **Qwen (Alibaba Token Plan)**: percentages come from a logged-in console
+  session held in the dedicated `qwen-browser` container on khpi5 (headful
+  Chromium with a remote desktop, loopback-only). The collector auto-grabs
+  cookies from that live profile over CDP every cycle — **no cookie pasting**.
+  To log in or re-login (once every few weeks): `ssh -L 3099:localhost:3099
+  khpi5`, then open `http://localhost:3099` and sign into
+  `modelstudio.console.alibabacloud.com`. Verified grabs are mirrored into
+  `data/settings.json` for the 2-hourly keepalive. If the session dies
+  server-side, the card silently falls back to availability mode from the
+  token-plan API key until you log in again; percentages reappear within 10
+  minutes of login. Ops note: if the browser inside doesn't start, recreate it
+  (`docker compose up -d qwen-browser cdp-relay`) rather than `docker restart`.
 - **Telegram alerts**: create a bot with @BotFather, send it `/start`, then
   either find your chat ID via
   `https://api.telegram.org/bot<TOKEN>/getUpdates` or use the Settings tab's
@@ -101,7 +105,7 @@ the API — always masked):
 | Z.ai | `api.z.ai/api/monitor/usage/quota/limit` (direct) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | `opencode.ai/zen/go/v1/usage` (direct) | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) | Google OAuth on the server |
-| Qwen | Alibaba Token Plan usage API / token-plan probe | console session (auto-kept-alive) + token-plan key fallback |
+| Qwen | Alibaba Token Plan usage API / token-plan probe | live Chromium profile in `qwen-browser` (CDP grab, self-healing) + token-plan key fallback |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red

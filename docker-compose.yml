@@ -10,3 +10,38 @@ services:
       - INGEST_KEY=${INGEST_KEY}
     volumes:
       - ./data:/app/data
+
+  # Logged-in Chromium holding the Alibaba Bailian session (Qwen percentages).
+  # Dave remotes into the desktop via SSH tunnel to log in / re-login; the
+  # collector grabs cookies from this live profile over CDP. Both ports are
+  # loopback-only on the host — reach the UI with:
+  #   ssh -L 3099:localhost:3099 khpi5   →   http://localhost:3099
+  qwen-browser:
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: qwen-browser
+    restart: unless-stopped
+    shm_size: "1gb"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      # Chrome ≥136 refuses CDP on a default profile dir, hence explicit
+      # --user-data-dir. Chromium now hard-binds CDP to its own loopback
+      # (--remote-debugging-address is ignored), so 9222 stays internal and
+      # the cdp-relay sidecar below publishes it.
+      - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile
+    ports:
+      - "127.0.0.1:3099:3000"
+      - "127.0.0.1:9333:9333"
+    volumes:
+      - ./data/qwen-browser:/config
+
+  # Chromium accepts CDP connections only from its own loopback; this sidecar
+  # shares qwen-browser's network namespace and relays 0.0.0.0:9333 (published
+  # loopback-only on the host) -> 127.0.0.1:9222 for the host-side collector.
+  cdp-relay:
+    image: alpine/socat:latest
+    container_name: qwen-cdp-relay
+    restart: unless-stopped
+    network_mode: "service:qwen-browser"
+    command: TCP-LISTEN:9333,fork,reuseaddr TCP4:127.0.0.1:9222
