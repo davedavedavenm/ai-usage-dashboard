@@ -58,9 +58,10 @@ see infra DECISIONS.md bash -s rule).
 
 ## 5. Cron (khpi5 local time; logs are UTC)
 
-See DECISIONS.md "Cron inventory". Three entries: */10 collect (flocked),
-2-hourly Alibaba session refresh (headless browser), 2-hourly cookie
-keepalive. BST is UTC+1 — don't misread log timestamps as cron misses.
+See DECISIONS.md "Cron inventory". Two entries: */10 collect (flocked) and
+2-hourly `keepalive.mjs` (Alibaba session keepalive, plain HTTP). BST is
+UTC+1 — don't misread log timestamps as cron misses. There is deliberately NO
+browser automation in this stack anymore.
 
 ## 6. Common Mistakes To Avoid
 
@@ -69,6 +70,10 @@ keepalive. BST is UTC+1 — don't misread log timestamps as cron misses.
   lives in `runStatusCli()` now — don't remove it.
 - **Trust HTTP 200 from Alibaba pages** as session-alive proof. Only the real
   usage-API call (`verifyAliCookie`) counts.
+- **Reintroduce browser automation or cookie-expiry alerts for Qwen.** Settled:
+  HTTP keepalive + key fallback + silent degradation (DECISIONS.md). If
+  percentages vanish from the Qwen card, the fix is one cookie paste in
+  Settings — not new machinery.
 - **Start a second collector** for testing without `flock -n` on the same lock.
 - **Compare file copies by eye.** Use LF-normalized md5 both sides
   (`sed 's/\r$//' f | md5sum` remote; normalize CRLF→LF locally).
@@ -80,10 +85,10 @@ keepalive. BST is UTC+1 — don't misread log timestamps as cron misses.
 
 Full table with renewal paths in DECISIONS.md. One-liners:
 Claude = OAuth auto-refresh (`claude-token.mjs`); ChatGPT/Antigravity =
-opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen console cookie =
-browser-kept-alive (`alijar.mjs` + `keepalive.mjs`). Telegram bot "AI Usage
-Manager": staged alerts, dedupe in `state.json`, config only in khpi5
-`data/settings.json`.
+opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = console session
+kept alive by HTTP (`keepalive.mjs`) with token-plan key fallback. Telegram
+bot "AI Usage Manager": staged allowance alerts only, dedupe in `state.json`,
+config only in khpi5 `data/settings.json`.
 
 ## 8. Commit Discipline
 

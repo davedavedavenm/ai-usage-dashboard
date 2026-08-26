@@ -81,6 +81,35 @@ different code paths did `continue` without a trace.
 entire 5-hour window even on successful probes. Parser now treats reset_at as
 optional and ignores `(none)`.
 
+## Qwen runs on console session + token-plan key fallback; browser automation retired — Active
+
+Two complementary sources, checked in this order by `collect.mjs`:
+
+1. **Console session** (`alibabaCookie` in khpi5 `data/settings.json`) → real
+   percentage windows (5h + weekly) from the token-plan usage API. Kept alive
+   automatically by the 2-hourly `keepalive.mjs` cron (plain HTTP: hits the
+   console page + loginInfo endpoint, merges Set-Cookie, verifies against the
+   real usage API before saving). No browser, no Xvfb, no profile.
+2. **Token-plan API key** (auth.json `bailian-token-plan-personal` /
+   `alibaba-token-plan`, or Settings tab) → always answers even with no live
+   session: "quota available" or 0% + reset time parsed from the 429 body.
+
+If the session eventually dies server-side, the card degrades silently to key
+mode — no Telegram message, nothing to restart. Restoring percentages is one
+cookie paste in the Settings tab (Copy as cURL from an api.json request),
+whenever convenient.
+
+**Retired (2026-08-26):** `alijar.mjs` headless-browser login/refresh/export
+cycle and its crons, `refresh-and-export.sh`, `keepalive-and-collect.sh`,
+`tg-notify.mjs`, and the daily "Qwen cookie expired" Telegram alert. Reasons,
+measured on khpi5: the browser profile's session died 2026-08-25 while the
+settings cookie stayed valid (split-brain), `refresh` failed its own
+verification seconds before `export` passed it on the same cookies, the CLI
+has no alibaba-coding-plan probe, and Alibaba exposes **no key-authenticated
+percentage endpoint** (usage/billing/quota candidates all 404). The browser
+added only a re-login ability that never worked without human QR entry.
+Rollback if ever needed: git history retains the deleted scripts.
+
 ## Per-provider auth model — Active
 
 | Card | Probe | Credential | Renewal |
@@ -90,7 +119,7 @@ optional and ignores `(none)`.
 | Gemini/Antigravity | opencode-quota CLI | opencode `auth.json` Google OAuth | same pattern |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
-| Qwen (Alibaba Token Plan) | token-plan API key first, console cookie fallback | `auth.json` key + cookie in `data/settings.json` | session kept alive by 2 h `keepalive.mjs` (merge Set-Cookie) and `refresh-and-export.sh` → headless-browser re-login (`alijar.mjs`, persistent Chromium profile, `DISPLAY=:99`) with export back to settings.json; verified against the real usage API, never against HTTP 200 page loads |
+| Qwen (Alibaba Token Plan) | usage API via console session; token-plan key probe fallback | cookie in `data/settings.json` + `auth.json` key | fully automatic — see the Qwen decision above |
 
 A manual `claude login` / `opencode auth login` is a **fallback**, not part of
 normal operation. If the dashboard suggests logging in again, first check
@@ -107,10 +136,9 @@ by design:
   docs. Env fallbacks `AIUD_TG_BOT_TOKEN`/`AIUD_TG_CHAT_ID` exist for testing.
 - Alerts are **staged** per provider-window: 🟡 50% → 🟠 30% → 🔴 threshold
   (default 15%) → 🚨 0%, deduped in `collector/state.json` keyed by window +
-  reset time, so each stage fires once per reset period.
-- The Qwen console-cookie expiry notice is throttled to once/24 h and re-arms
-  on recovery; `scripts/tg-notify.mjs` is the shared sender used by
-  `refresh-and-export.sh` for session-expired notices.
+  reset time, so each stage fires once per reset period. Allowance thresholds
+  are the ONLY alert source — there are deliberately no cookie/session
+  "action needed" notifications (retired 2026-08-26).
 - Test channel: Settings tab → *Send test message* (POST `/api/telegram-test`).
 
 Do not create a second bot or hardcode chat ids anywhere.
@@ -129,8 +157,7 @@ required locally beyond this checkout.
 
 ```
 */10 * * * *  cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-collect.lock node collect.mjs >> collect.log 2>&1
-0 */2 * * *   stacks/ai-usage-dashboard/collector/refresh-and-export.sh     # Alibaba browser-session refresh + cookie export
-0 */2 * * *   stacks/ai-usage-dashboard/collector/keepalive-and-collect.sh  # keepalive.mjs: merge Set-Cookie into settings.json
+0 */2 * * *   cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-keepalive.lock node keepalive.mjs >> keepalive.log 2>&1
 ```
 
 Gotchas: cron fires in **local** time (BST = UTC+1) while collect.log
@@ -138,11 +165,12 @@ timestamps are UTC — an apparent mismatch of one hour between "when cron ran"
 and log lines is expected. `flock -n` means overlapping runs are skipped, not
 queued; don't add other collectors that take different locks.
 
-## keepalive-and-collect.sh no longer collects — Historical
+## keepalive-and-collect.sh no longer exists — Historical
 
-It used to start a second collector every 2 h, racing the */10 entry and
-double-sending Telegram alerts. Since the rewrite it only runs `keepalive.mjs`;
-collection happens exclusively in the */10 cron.
+It once started a second collector every 2 h, racing the */10 entry and
+double-sending Telegram alerts; later it was reduced to only running
+`keepalive.mjs`. With the browser-retirement decision the wrapper and its
+cron line were replaced by a direct `keepalive.mjs` entry (2026-08-26).
 
 ---
 

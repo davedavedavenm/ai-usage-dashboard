@@ -46,8 +46,6 @@ const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
 const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity", "google-gemini-cli", "google-agy"];
 const ALERT_THRESHOLD_DEFAULT = 15;
-// Cookie-expiry is an action-needed alert; once per day avoids hourly spam.
-const ALI_COOKIE_EXPIRY_ALERT_INTERVAL_MS = 24 * 3600 * 1000;
 const TG_API = "https://api.telegram.org";
 
 function readAuth() {
@@ -182,19 +180,19 @@ function aliPercent(raw) {
   return Math.round(n * 10) / 10;
 }
 
+// Real percentage windows from the Alibaba token-plan usage API. The cookie is
+// maintained automatically (keepalive merge + browser-profile refresh/export);
+// when it is dead or absent the key probe below takes over silently.
 async function fetchQwen(cookie) {
   if (!cookie) return { status: "unavailable" };
   if (/[^\x20-\x7E]/.test(cookie)) {
-    return { status: "error", error: "Cookie contains non-ASCII characters — it was copied truncated (DevTools ellipsis). Re-copy via right-click → Copy as cURL and take the cookie: value, then paste it in the dashboard Settings tab." };
+    return { status: "error", error: "Cookie contains non-ASCII characters — re-copy via right-click → Copy as cURL and paste in Settings." };
   }
   const secToken = await resolveAliSecToken(cookie);
   const usage = await aliCall(ALI_APIS.usage, cookie, secToken);
   if (usage.error) {
     if (/NotLogined|NeedLogin/i.test(usage.error)) {
-      return { status: "error", error: "Bailian console session expired — refresh the Alibaba cookie in the stack .env or the dashboard Settings tab" };
-    }
-    if (/Workspace\.NotAuthorised/i.test(usage.error) && !secToken) {
-      return { status: "error", error: "BailianGateway.Workspace.NotAuthorised — cookie is missing sec_token; re-copy the full Cookie header from the browser" };
+      return { status: "unavailable", error: "console session expired" };
     }
     return { status: "error", error: "Alibaba API error " + usage.error };
   }
@@ -212,7 +210,7 @@ async function fetchQwen(cookie) {
     entries.push(pctEntry("This week", 100 - pw, reset, "weekly"));
   }
   if (!entries.length) return { status: "error", error: "Alibaba API error: usage windows empty" };
-  return { status: "ok", label: "Qwen", entries };
+  return { status: "ok", label: "Qwen", entries, note: "live percentages via console session" };
 }
 
 function runStatusCli(providerId) {
@@ -432,38 +430,18 @@ async function main() {
     env: envValue(readParentEnv(), "AIUD_QWEN_API_KEY"),
   });
   {
-    let qwenResult = { status: "unavailable" };
-    let cookieFailed = false;
-    let cookieOk = false;
-    if (aliCookie) {
-      qwenResult = await fetchQwen(aliCookie);
-      if (qwenResult.status === "ok") cookieOk = true;
-      else if (qwenResult.status === "error" && /session expired|NotLogined|NeedLogin/i.test(qwenResult.error || "")) {
-        cookieFailed = true;
-      }
-    }
+    // Qwen has two complementary sources: the console session (real percentage
+    // windows, kept alive automatically by keepalive + profile refresh/export)
+    // and the token-plan API key (always answers: available / exhausted+reset).
+    // Cookie first for fidelity; key takes over silently when it is dead/absent.
+    let qwenResult = aliCookie ? await fetchQwen(aliCookie) : { status: "unavailable" };
     if (qwenResult.status !== "ok" && qwenKey) {
-      qwenResult = await fetchQwenTokenPlan(qwenKey);
+      const keyResult = await fetchQwenTokenPlan(qwenKey);
+      if (keyResult.status === "ok" || !aliCookie || keyResult.status !== "unavailable") {
+        qwenResult = keyResult;
+      }
     }
     direct["alibaba-coding-plan"] = qwenResult;
-    if (cookieFailed) {
-      state.aliCookieExpiryAlertSent = state.aliCookieExpiryAlertSent || 0;
-      if (Date.now() - state.aliCookieExpiryAlertSent > ALI_COOKIE_EXPIRY_ALERT_INTERVAL_MS) {
-        const alertCfg = readAlertConfig();
-        if (alertCfg.token && alertCfg.chatId) {
-          const msg = "⚠️ <b>Qwen cookie expired</b>\nThe Alibaba console session has expired. Re-paste a fresh cookie in the dashboard Settings tab to restore usage percentages.\n" + DASHBOARD_URL;
-          const result = await sendTelegram(alertCfg, msg);
-          state.aliCookieExpiryAlertSent = Date.now();
-          state.aliCookieExpiryAlertResult = result;
-          writeState(state);
-        }
-      }
-    } else if (cookieOk && state.aliCookieExpiryAlertSent) {
-      // Session recovered — re-arm the expiry alert so a future expiry warns immediately.
-      delete state.aliCookieExpiryAlertSent;
-      delete state.aliCookieExpiryAlertResult;
-      writeState(state);
-    }
   }
   for (const [id, r] of Object.entries(direct)) {
     if (r.status !== "unavailable") providers[id] = r;

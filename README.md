@@ -12,7 +12,7 @@ endpoint. Nothing needs to run on your workstation.
 ## Architecture
 
 ```
-provider quota APIs (Z.ai, opencode.ai, Anthropic/OpenAI OAuth, Qwen console, ...)
+provider quota APIs (Z.ai, opencode.ai, Anthropic/OpenAI OAuth, Qwen token-plan, ...)
         │
 cron (every 10 min) ── collector/collect.mjs ──> POST /api/ingest (X-Ingest-Key)
         │
@@ -75,24 +75,22 @@ Open `http://<server>:8099/` → **Settings** (LAN only; secrets are stored in
 `data/settings.json` on the server, never committed, and never returned raw by
 the API — always masked):
 
-- **Qwen (Alibaba Token Plan)**: quota is console-only (no API-key endpoint).
-  Log into `modelstudio.console.alibabacloud.com`, open DevTools → Network →
-  right-click an `api.json` request → **Copy as cURL (bash)** → paste the
-  `cookie:` value in the Settings tab. Pasting from the DevTools *Headers*
-  pane truncates the cookie (Chrome shows a `…` ellipsis) — the dashboard
-  detects that and rejects it. Re-paste when the session expires.
+- **Qwen (Alibaba Token Plan)**: percentages come from the console session,
+  which the server keeps alive automatically (2-hourly HTTP keepalive). If
+  that session ever dies, the card silently falls back to availability mode
+  from the token-plan API key. To restore exact percentages: log into
+  `modelstudio.console.alibabacloud.com`, DevTools → Network → right-click an
+  `api.json` request → **Copy as cURL (bash)** → paste the `cookie:` value in
+  the Settings tab (pasting from the *Headers* pane truncates it — the
+  dashboard detects and rejects that).
 - **Telegram alerts**: create a bot with @BotFather, send it `/start`, then
   either find your chat ID via
   `https://api.telegram.org/bot<TOKEN>/getUpdates` or use the Settings tab's
   *Send test message* button. Alerts are **staged**: 🟡 50% → 🟠 30% → 🔴
   final threshold (default 15%) → 🚨 at 0%, one message per stage per provider
   window per reset period, deduped in `collector/state.json` — so you're warned
-  early, never bombarded, and never told only when you're already out.
-  If the Qwen console cookie expires you get a reminder at most once per 24h
-  (re-armed as soon as the cookie works again), and the 2-hourly session
-  refresher (`refresh-and-export.sh`) validates the session against the real
-  usage API — a dead session fails loud and notifies once per day with the
-  re-login command.
+  early, never bombarded. Allowance thresholds are the only alert source; there
+  are no session/cookie maintenance notifications.
 
 ## Provider coverage
 
@@ -103,7 +101,7 @@ the API — always masked):
 | Z.ai | `api.z.ai/api/monitor/usage/quota/limit` (direct) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | `opencode.ai/zen/go/v1/usage` (direct) | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) | Google OAuth on the server |
-| Qwen | Alibaba Token Plan console (intl) | console cookie via the Settings tab |
+| Qwen | Alibaba Token Plan usage API / token-plan probe | console session (auto-kept-alive) + token-plan key fallback |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red
