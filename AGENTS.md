@@ -84,7 +84,8 @@ browser automation in this stack anymore.
 ## 7. Provider/Auth Quick Matrix
 
 Full table with renewal paths in DECISIONS.md. One-liners:
-Claude = OAuth auto-refresh (`claude-token.mjs`); ChatGPT/Antigravity =
+Claude/ChatGPT = OAuth auto-refresh (`claude-token.mjs` / `chatgpt-token.mjs`);
+Antigravity =
 opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = console session
 kept alive by HTTP (`keepalive.mjs`) with token-plan key fallback. Telegram
 bot "AI Usage Manager": staged allowance alerts only, dedupe in `state.json`,

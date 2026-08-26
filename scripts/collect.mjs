@@ -5,6 +5,7 @@ import { join, dirname } from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
+import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken } from "./ali-session.mjs";
 
@@ -455,6 +456,11 @@ async function main() {
         providers.anthropic = { status: "error", error: `Anthropic quota probe paused after HTTP 429; retry in ~${mins}m.` };
         continue;
       }
+    }
+    if (id === "openai") {
+      // opencode-quota reads auth.json directly and never triggers a refresh;
+      // renew the ChatGPT token ourselves before probing.
+      await refreshOpenAITokenIfNeeded();
     }
     const cli = runStatusCli(id);
     if (cli.error) {

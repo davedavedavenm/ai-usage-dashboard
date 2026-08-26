@@ -115,7 +115,7 @@ Rollback if ever needed: git history retains the deleted scripts.
 | Card | Probe | Credential | Renewal |
 |---|---|---|---|
 | Claude (anthropic) | opencode-quota CLI live probe | `~/.claude/.credentials.json` on khpi5 | **automatic**: `claude-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rate-limit/backoff state in `~/.claude/.oauth-refresh.json`); manual re-login only if refresh_token itself expires — SSH tunnel flow in README |
-| ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | auto via opencode; `opencode auth login -p openai` if expired |
+| ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
 | Gemini/Antigravity | opencode-quota CLI | opencode `auth.json` Google OAuth | same pattern |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
@@ -125,6 +125,20 @@ A manual `claude login` / `opencode auth login` is a **fallback**, not part of
 normal operation. If the dashboard suggests logging in again, first check
 `grep skipped collect.log` and the auth matrix above — the 2026-08-25 incident
 showed a healthy credential being reported as a login problem.
+
+**ChatGPT does not self-refresh on a headless box — Historical gotcha.**
+opencode refreshes its openai OAuth token lazily, only while being used
+interactively. The collector probes via the external `opencode-quota` CLI,
+which reads `auth.json` directly and never triggers a refresh, so the token
+aged out (2026-08-26: issued Aug 16 18:23 UTC, expired Aug 26 18:23 UTC, card
+died) despite DECISIONS.md previously claiming "auto via opencode". Fixed by
+mirroring the Claude pattern in `chatgpt-token.mjs`, called from `collect.mjs`
+before every openai probe. Refresh params verified against opencode source
+(`packages/opencode/src/plugin/codex.ts`: token endpoint
+`https://auth.openai.com/oauth/token`, public client_id, form-urlencoded
+refresh grant; refresh tokens rotate on every grant and are written back to
+`auth.json`). Do not probe ChatGPT quota through opencode itself as a
+"fix" for expiry — it needs interactive usage we don't have here.
 
 ## Telegram bot ("AI Usage Manager") — Active
 
