@@ -85,14 +85,17 @@ optional and ignores `(none)`.
 
 The Bailian console session (real percentage windows) lives in a persistent
 Chromium profile inside the **`qwen-browser`** container (see
-`docker-compose.yml`): headful Chromium + web VNC, password-protected
+`docker-compose.yml`): headful Chromium + web desktop, password-protected
 (`QWEN_UI_USER`/`QWEN_UI_PASSWORD` in khpi5 stack `.env`, never in the repo)
-and published on the LAN (`192.168.1.143:3099`) plus tailnet
-(`100.65.57.85:3099`). Login/re-login flow (~1 min):
+and published on the LAN (`https://192.168.1.143:3099`) plus tailnet
+(`https://100.65.57.85:3099`). The mapping targets the image's HTTPS listener
+(container :3001; self-signed cert lives in `data/qwen-browser/ssl/`, so
+accept the browser warning) because Selkies' UI refuses plain-HTTP origins.
+Login/re-login flow (~1 min):
 
 ```
-# from any LAN device:  http://192.168.1.143:3099   (or via tailnet http://100.65.57.85:3099)
-# then sign into modelstudio.console.alibabacloud.com
+# from any LAN device:  https://192.168.1.143:3099   (or via tailnet https://100.65.57.85:3099)
+# accept self-signed cert, then sign into modelstudio.console.alibabacloud.com
 ```
 
 CDP stays **loopback-only** on khpi5 (host :9333 → relay → Chromium's own

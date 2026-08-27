@@ -31,9 +31,13 @@ services:
       # (--remote-debugging-address is ignored), so 9222 stays internal and
       # the cdp-relay sidecar below publishes it.
       - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile
+    # Publish the image's HTTPS listener (container :3001, self-signed cert in
+    # ./data/qwen-browser/ssl) — Selkies' UI rejects plain-HTTP origins
+    # ("requires a secure connection"), so https:// is the supported path.
+    # CDP relay stays loopback-only.
     ports:
-      - "192.168.1.143:3099:3000"
-      - "100.65.57.85:3099:3000"
+      - "192.168.1.143:3099:3001"
+      - "100.65.57.85:3099:3001"
       - "127.0.0.1:9333:9333"
     volumes:
       - ./data/qwen-browser:/config

@@ -79,9 +79,9 @@ the API — always masked):
   session held in the dedicated `qwen-browser` container on khpi5 (headful
   Chromium with a password-protected remote desktop). The collector auto-grabs
   cookies from that live profile over CDP every cycle — **no cookie pasting**.
-  To log in or re-login: open `http://192.168.1.143:3099` (or via tailnet
-  `http://100.65.57.85:3099`; creds in khpi5 stack `.env` as `QWEN_UI_USER` /
-  `QWEN_UI_PASSWORD`) and sign into
+  To log in or re-login: open `https://192.168.1.143:3099` (or via tailnet
+  `https://100.65.57.85:3099`; creds in khpi5 stack `.env` as `QWEN_UI_USER` /
+  `QWEN_UI_PASSWORD`; accept the self-signed cert warning) and sign into
   `modelstudio.console.alibabacloud.com`. Verified grabs are mirrored into
   `data/settings.json` for the 2-hourly keepalive. If the session dies
   server-side, the card silently falls back to availability mode from the
