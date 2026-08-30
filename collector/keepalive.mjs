@@ -13,10 +13,15 @@
  * No browser needed — just plain HTTP fetch.
  */
 import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { verifyAliCookie, writeSettingsAtomic, ALI_UA } from "./ali-session.mjs";
 
+// Stack data dir: explicit in the collector container (AIUD_SETTINGS_PATH
+// is set by docker-compose); default resolves relative to this script for
+// plain-node runs (stack layout: collector/../data/settings.json).
 const SETTINGS_PATH = process.env.AIUD_SETTINGS_PATH ||
-  "/home/dave/stacks/ai-usage-dashboard/data/settings.json";
+  join(dirname(fileURLToPath(import.meta.url)), "..", "data", "settings.json");
 const CONSOLE_URL = "https://modelstudio.console.alibabacloud.com/ap-southeast-1/";
 const ALI_FE = "https://modelstudio.console.alibabacloud.com";
 const ALI_API = "https://bailian-singapore-cs.alibabacloud.com/data/api.json";

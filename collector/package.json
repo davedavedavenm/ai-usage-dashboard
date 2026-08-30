@@ -1,17 +1,16 @@
 {
   "name": "collector",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "AI Usage Allowance Dashboard - quota collector (runs in Docker; see collector/Dockerfile)",
+  "type": "module",
+  "main": "collect.mjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "collect": "node collect.mjs",
+    "keepalive": "node keepalive.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@slkiser/opencode-quota": "^4.8.1",
-    "opencode-gemini-auth": "^1.4.15",
-    "playwright": "^1.62.1"
+    "ws": "^8.18.0"
   }
 }

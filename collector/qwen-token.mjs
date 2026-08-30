@@ -3,7 +3,7 @@ import { join } from "path";
 import { readFileSync, writeFileSync, renameSync, chmodSync } from "fs";
 
 const STATE_PATH = process.env.QWEN_PROBE_STATE_PATH ||
-  join(homedir(), ".claude", ".qwen-probe.json");
+  join(homedir(), ".claude", ".qwen-probe.json"); // /creds/.claude in the collector container
 
 const PROBE_URL = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions";
 const PROBE_MODEL = process.env.QWEN_PROBE_MODEL || "qwen3.6-flash";

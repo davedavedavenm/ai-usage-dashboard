@@ -9,44 +9,74 @@
  * Chrome holds — no manual cookie pastes anywhere.
  */
 import { ALI_UA } from "./ali-session.mjs";
+import http from "node:http";
+import { URL as Url } from "node:url";
+import WebSocketImpl from "ws";
 
-const CDP_BASE = process.env.AIUD_QWEN_CDP || "http://127.0.0.1:9333";
+const CDP_BASE = process.env.AIUD_CDP_BASE || "http://127.0.0.1:9333";
 // Domains whose cookies make up a usable Bailian console session.
 const DOMAIN_RE = /(?:^|\.)alibabacloud\.com$|(?:^|\.)aliyun\.com$/;
 const CONNECT_TIMEOUT_MS = 5000;
 
+// Chromium's DevTools HTTP endpoint validates the Host header (rejects
+// anything but localhost/127.0.0.1 since ~M66). node's fetch (undici) silently
+// drops a custom Host header (forbidden per fetch spec), so this MUST go
+// through node:http where Host is settable — the compose-network route
+// (http://qwen-browser:9333) only answers with the explicit override.
 function fetchWithTimeout(url, ms = CONNECT_TIMEOUT_MS) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
-  return fetch(url, { headers: { "User-Agent": ALI_UA }, signal: ctrl.signal })
-    .finally(() => clearTimeout(t));
+  return new Promise((resolve, reject) => {
+    const u = new Url(url);
+    const req = http.get({
+      host: u.hostname,
+      port: u.port || 80,
+      path: u.pathname + u.search,
+      headers: { "User-Agent": ALI_UA, Host: "localhost" },
+      timeout: ms,
+    }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(body) }));
+    });
+    req.on("timeout", () => { req.destroy(); reject(new Error("cdp http timeout")); });
+    req.on("error", reject);
+  });
 }
 
 function wsRequest(wsUrl, message, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
+    // DevTools reports the browser-loopback ws://localhost/devtools/... URL
+    // (no port, unreachable from here). Rewrite host:port to the relay
+    // while keeping Host: localhost — the endpoint validates it. The ws
+    // package allows the Host header; undici/WebSocket would silently drop
+    // it (forbidden header), so node's built-in WebSocket cannot be used.
+    const relay = new Url(CDP_BASE);
+    const target = new Url(wsUrl);
+    const ws = new WebSocketImpl(
+      `ws://${relay.hostname}:${relay.port || 80}${target.pathname}${target.search}`,
+      { headers: { Host: "localhost" }, handshakeTimeout: timeoutMs },
+    );
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       reject(new Error("cdp websocket timeout"));
     }, timeoutMs);
-    ws.addEventListener("open", () => {
+    ws.on("open", () => {
       try { ws.send(JSON.stringify(message)); } catch (e) {
         clearTimeout(timer);
         reject(e);
       }
     });
-    ws.addEventListener("message", ev => {
+    ws.on("message", (buf) => {
       let data = null;
-      try { data = JSON.parse(typeof ev.data === "string" ? ev.data : String(ev.data)); } catch {}
+      try { data = JSON.parse(buf.toString()); } catch {}
       if (data && data.id === message.id) {
         clearTimeout(timer);
         try { ws.close(); } catch {}
         resolve(data);
       }
     });
-    ws.addEventListener("error", () => {
+    ws.on("error", (e) => {
       clearTimeout(timer);
-      reject(new Error("cdp websocket error"));
+      reject(new Error("cdp websocket error: " + String(e.message || e).slice(0, 80)));
     });
   });
 }

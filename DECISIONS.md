@@ -12,27 +12,31 @@ pointer, not a restatement.
 
 ---
 
-## khpi5 is the deployment target; repo is source of truth; deploy = scp — Active
+## khpi5 is the deployment target; repo is source of truth — Active
 
 The stack runs on **khpi5** at `/home/dave/stacks/ai-usage-dashboard`
-(server: Docker container, port 8099; collector: plain node + cron). The target
-is **not** a git checkout. The workflow is always:
+as a full Docker Compose stack (server + collector + optional qwen-browser /
+cdp-relay). The target is **not** a git checkout. The workflow is always:
 
-edit in this repo → normalize line endings to LF → `scp` changed files →
-`syntax-check remotely → trigger one collect → verify`.
+edit in this repo → normalize LF → `scp` changed files to the stack dir →
+`docker compose build` the changed images → `up -d` → verify
+(collector JSON log + `/api/quota`).
 
 Never patch the host copy live and leave the repo behind; that is how the
 truncated-comment drift in `alijar.mjs` / `keepalive-and-collect.sh` (found
 2026-08-25) happened.
 
-Path mapping (verified byte-aligned 2026-08-25):
+Path mapping (single tree since 2026-08-30):
 
 | This repo | khpi5 |
 |---|---|
 | `server.js`, `Dockerfile`, `docker-compose.yml`, `public/` | `/home/dave/stacks/ai-usage-dashboard/<same>` |
-| `scripts/*.mjs`, `scripts/*.sh` | `/home/dave/stacks/ai-usage-dashboard/collector/<same>` |
+| `collector/*` (code + own Dockerfile) | built into image `aiud-collector` |
 
-Secrets (`data/settings.json`, `.env`) exist **only** on khpi5.
+Secrets (`data/`, `.env`) exist **only** on khpi5. Host credential files
+(`~/.claude`, `~/.config/opencode`, `~/.cache/opencode`, `~/.local/share/
+opencode`) are bind-mounted into the collector container — mounted, never
+copied, so they stay the single source of truth for the interactive CLIs.
 
 **Why:** the 2026-08-25 outage showed what happens otherwise — fixes were
 promised repeatedly but never landed end-to-end, and nobody could tell which
@@ -121,26 +125,28 @@ available" that was easy to miss for days — until the next remote login;
 percentages reappear within one collect cycle (≤10 min). No alerts about it
 (see Telegram decision below).
 
-**Resilience layers (both live on khpi5):**
+**Resilience layers (all live on khpi5):**
 - *Inside* the container, `/config/.config/labwc/autostart`
-  (repo copy: `scripts/qwen-labwc-autostart.sh`) is a supervising loop that
-  relaunches Chromium whenever no chromium process is running and cleans stale
-  profile singleton locks first. This exists because the stock image autostart
-  called `wrapped-chromium` once with all output discarded (`> /dev/null`),
-  so one flaky launch left a dead desktop — no processes, no logs
-  (observed twice on 2026-08-26). Recreate-proof (volume persists) and it
-  never touches a running instance mid-login. Since 2026-08-30 it also
-  launches Chromium **directly onto the Bailian console URL** — the open SPA
-  tab keeps the Alibaba session alive server-side with its own background
-  refreshes. Root cause of the 2026-08-28 silent expiry: after a Chromium
-  relaunch the browser sat on a blank tab for ~34 h with nothing touching
-  alibabacloud.com, and the server expired the session. (The compose
+  (repo copy: `collector/qwen-labwc-autostart.sh`) runs **two supervising
+  loops**: (1) relaunch — whenever no chromium process is running, clear
+  stale profile singleton locks and start one (the stock image autostart
+  called `wrapped-chromium` once with all output discarded, so one flaky
+  launch left a dead desktop; observed twice on 2026-08-26);
+  (2) wedge-kill — chromium running but CDP not answering 4×15 s checks past
+  a 90 s cold-start grace means a zombie browser: kill it, loop (1) starts a
+  fresh one. A healthy instance is never touched mid-login. Both loops are
+  recreate-proof (the volume persists the autostart file). Since 2026-08-30
+  they also launch Chromium **directly onto the Bailian console URL** — the
+  open SPA tab keeps the Alibaba session alive server-side with its own
+  background refreshes. Root cause of the 2026-08-28 silent expiry: after a
+  Chromium relaunch the browser sat on a blank tab for ~34 h with nothing
+  touching alibabacloud.com, and the server expired the session. (The compose
   `CHROME_CLI` var carries the same URL but is only consumed by the image's
   stock `/defaults/autostart` on a wiped volume — the supervisor owns
   launching on this volume.)
 - *Outside*, the */2 cron `qwen-watchdog.sh` backstop force-recreates both
-  containers when CDP on :9333 fails twice, 75 s apart. With the supervisor
-  this rarely fires; keep it for kasmvnc-level death.
+  containers when CDP on :9333 fails twice, 75 s apart. With the in-container
+  supervisor this rarely fires; keep it for kasmvnc-level death.
 
 Ops note: after manual intervention prefer recreate over restart
 (`docker compose up -d qwen-browser cdp-relay`); plain `docker restart` can
@@ -167,30 +173,31 @@ was never installed, and Dave has no AI Studio subscription. Removed from
 `STATUS_PROVIDERS` and the dashboard card meta. Do not re-add unless an AGY
 credential actually appears in `auth.json`.
 
-## google-gemini-cli enabled via opencode-gemini-auth plugin — Active (2026-08-30)
+## Gemini plan windows come from the Antigravity probe — Active (2026-08-30)
 
-Dave has a **Gemini AI subscription, not API tokens**. The subscription's
-quota buckets (Code Assist / Gemini CLI allowances) are exposed by
-opencode-quota through the `google-gemini-cli` provider, which needs:
+Dave has a **Gemini AI subscription, not API tokens**. The whole plan's quota
+windows (G3Pro, G3Flash, Claude, G3Image, GPTOSS models — each its own
+5-hour allowance) are returned by the `google-antigravity` probe, driven by
+the `googleModels` key in `~/.config/opencode/opencode-quota/quota-toast.json`,
+authenticated with the existing Antigravity OAuth (no extra login).
 
-1. the `opencode-gemini-auth` companion package resolvable from the
-   collector's `node_modules` (pinned in `collector/package.json`), and
-2. a Google OAuth entry whose `refresh` field is the Gemini-CLI format
-   `refreshToken\|projectId[\|managedProjectId]` — created by running
-   `opencode auth login` → Google → **OAuth with Google (Gemini CLI)** with
-   that plugin registered in `~/.config/opencode/opencode.json` (done on
-   khpi5 2026-08-30; backup at `opencode.json.bak-20260830`).
+- `googleModels` valid ids: G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS.
+- The quota CLI hard-caps status output at 2 live entries
+  (`STATUS_LIVE_ENTRY_LIMIT` in quota-status.js — not configurable, and
+  `--json` lacks entries entirely), so more than 2 models silently drop
+  rows. The collector Dockerfile patches the cap to 12 with a **loud-fail
+  guard**: if an upstream upgrade renames the constant, the image build
+  fails rather than silently losing windows.
+- `google-gemini-cli` was briefly enabled via the `opencode-gemini-auth`
+  plugin (2026-08-30, same day) then **reverted** once the antigravity route
+  was proven to return the same plan data with credentials already on the
+  host. Plugin unregistered, companion package removed. The plugin's README
+  also warns Google deems third-party Gemini-CLI OAuth policy-violating —
+  moot now, but a reason not to revive it casually.
 
-Before the login, the probe skips with `auth_state: invalid` — expected, not
-an error. Note the plugin's own README warning: Google has stated third-party
-use of Gemini CLI OAuth is policy-violating in principle; enforcement is
-currently unclear. Deliberate, informed choice to read quota only.
-
-Gotcha: `auth_state: invalid` means "OAuth entry exists but lacks
-refreshToken/projectId in Gemini-CLI format" — it does **not** mean the
-Google login is broken. Same family as the 2026-08-25 PATH incident: check
-the real reason in `/tmp/aiud-cli-google-gemini-cli.out` before telling
-anyone to re-login.
+Gotcha that sparked this: the antigravity card used to show only the Claude
+window because `googleModels` defaulted to `["CLAUDE"]` — looked like "no
+Gemini data" when it was really "no Gemini models requested".
 
 ## Per-provider auth model — Active
 
@@ -198,8 +205,7 @@ anyone to re-login.
 |---|---|---|---|
 | Claude (anthropic) | opencode-quota CLI live probe | `~/.claude/.credentials.json` on khpi5 | **automatic**: `claude-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rate-limit/backoff state in `~/.claude/.oauth-refresh.json`); manual re-login only if refresh_token itself expires — SSH tunnel flow in README |
 | ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
-| Gemini/Antigravity | opencode-quota CLI | opencode `auth.json` Google OAuth | same pattern |
-| Gemini CLI (plan quotas) | opencode-quota CLI (`google-gemini-cli`) | opencode `auth.json` Google OAuth via `opencode-gemini-auth` plugin | manual re-login if it ages out (`opencode auth login` → Google → Gemini CLI); plugin registered in khpi5 `~/.config/opencode/opencode.json`, companion package pinned in `collector/package.json` |
+| Gemini/Antigravity | opencode-quota CLI (`google-antigravity`, `googleModels` = plan model windows) | `~/.config/opencode/antigravity-accounts.json` | n/a while account valid (refresh handled inside the plugin's account store; manual re-login via `opencode auth login` → Google (Antigravity) if it ages out) |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
 | Qwen (Alibaba Token Plan) | usage API via live browser profile (CDP grab, verified); token-plan key probe fallback | logged-in session in `qwen-browser` container (mirrored to `data/settings.json`) + `auth.json` key | automatic except periodic remote login — see the Qwen decision above |
@@ -232,7 +238,8 @@ by design:
   object); settable/masked via the Settings tab; never in this repo, never in
   docs. Env fallbacks `AIUD_TG_BOT_TOKEN`/`AIUD_TG_CHAT_ID` exist for testing.
 - Alerts are **staged** per provider-window: 🟡 50% → 🟠 30% → 🔴 threshold
-  (default 15%) → 🚨 0%, deduped in `collector/state.json` keyed by window +
+  (default 15%) → 🚨 0%, deduped in the collector state file
+  (`data/collector-state.json` in the containerized stack) keyed by window +
   reset time, so each stage fires once per reset period. Allowance thresholds
   are the ONLY alert source — there are deliberately no cookie/session
   "action needed" notifications (retired 2026-08-26).
@@ -250,18 +257,44 @@ work goes through a local script file pushed with `scp` and run with
 remote work always goes through `bash -s`"). No WSL, no node, no clone
 required locally beyond this checkout.
 
+## Collector runs containerized with its own scheduler — Active (2026-08-30)
+
+The collector is a Docker service (image `aiud-collector`, built from
+`collector/Dockerfile`) whose `runner.mjs` owns all scheduling in-process:
+collect every 10 min, Alibaba keepalive every 2 h, wall-clock aligned with a
++5 s guard, single-flight by construction (one process spawns everything —
+the old flock rule is preserved structurally, not by a lockfile). This kills
+the entire class of cron-context bugs (the 2026-08-25 PATH incident was the
+archetype: cron's stripped env hid the `claude` binary).
+
+- The image installs `@anthropic-ai/claude-code` globally — the quota CLI's
+  anthropic probe **requires** the `claude` binary for credential discovery
+  (`claude auth status --json`); without it the probe reports
+  `quota_supported: false` even with valid credentials (verified by
+  bare-PATH experiment 2026-08-30). Keep the code-level PATH augmentation in
+  `runStatusCli()` for plain-node runs.
+- The image also patches the quota CLI's status live-entry cap
+  (`STATUS_LIVE_ENTRY_LIMIT` 2 → 12) with a build-time guard that **fails
+  loudly** if upstream renames the constant. See the Gemini/Antigravity
+  decision for why.
+- Credential mounts: `CREDENTIALS_ROOT/.claude`, `.config/opencode`,
+  `.cache/opencode`, `.local/share/opencode` → `/creds/*` with `HOME=/creds`
+  so every credential path resolves exactly as on the host. Refresh writes
+  go back through the same mounts.
+- Migration from the host-cron era (2026-08-30): the */10 collect and */120
+  keepalive crontab entries were removed; the */2 qwen-watchdog entry stays
+  as the browser backstop only.
+
 ## Cron inventory (khpi5, Europe/London) — Active
 
 ```
-*/10 * * * *  cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-collect.lock node collect.mjs >> collect.log 2>&1
-0 */2 * * *   cd stacks/ai-usage-dashboard/collector && flock -n /tmp/aiud-keepalive.lock node keepalive.mjs >> keepalive.log 2>&1
 */2 * * * *   cd stacks/ai-usage-dashboard && flock -n /tmp/aiud-qwen-watch.lock bash collector/qwen-watchdog.sh >> data/qwen-watchdog.log 2>&1
 ```
 
-Gotchas: cron fires in **local** time (BST = UTC+1) while collect.log
-timestamps are UTC — an apparent mismatch of one hour between "when cron ran"
-and log lines is expected. `flock -n` means overlapping runs are skipped, not
-queued; don't add other collectors that take different locks.
+The only host cron left. Collect/keepalive scheduling lives inside the
+collector container (see the containerized-collector decision); the watchdog
+force-recreates the qwen containers if CDP dies for 75+ s — with the
+in-container supervisor this rarely fires; keep it for kasmvnc-level death.
 
 ## keepalive-and-collect.sh no longer exists — Historical
 

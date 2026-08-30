@@ -11,6 +11,10 @@ import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAt
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// Stack data dir (settings.json, and plain-node state.json fallback). The
+// collector container mounts the stack data dir at /data; plain-node runs
+// keep the historical collector/../data layout.
+const DATA_DIR = process.env.AIUD_DATA_DIR || join(HERE, "..", "data");
 
 function readParentEnv() {
   try {
@@ -46,7 +50,12 @@ const REQ_TIMEOUT_MS = 20000;
 
 const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "Tools (MCP)" };
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
-const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity", "google-gemini-cli"];
+// google-antigravity covers the whole Google AI plan (Gemini + Claude model
+// windows) with the existing Antigravity OAuth login; google-gemini-cli and
+// google-agy are deliberately NOT probed (2026-08-30: gemini-cli needs a
+// separate plugin+login for data antigravity already returns, agy has no
+// account).
+const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity"];
 const ALERT_THRESHOLD_DEFAULT = 15;
 const TG_API = "https://api.telegram.org";
 
@@ -260,6 +269,15 @@ function parseStatus(text) {
   return providers;
 }
 
+// Per-model windows from the google-antigravity probe (opencode-quota
+// googleModels config): each model gets its own 5-hour allowance on the
+// Google AI plan. Map the CLI's display names to stable window ids so the
+// dashboard can sort and dedupe them.
+const AGY_MODEL_WINDOWS = {
+  "G3Pro": "agy-g3pro", "G3Flash": "agy-g3flash", "Claude": "agy-claude",
+  "G3Image": "agy-g3image", "GPT-OSS": "agy-gptoss",
+};
+
 function entriesFromStatusSection(section) {
   const entries = [];
   const errors = [];
@@ -272,7 +290,8 @@ function entriesFromStatusSection(section) {
     if (pe) {
       let name = pe[1];
       name = name.replace(/^live_entry_\d+:\s*/, "").replace(/:$/, "").trim();
-      const window = /weekly/i.test(name) ? "weekly" : /monthly/i.test(name) ? "monthly" : /hourly|5h/i.test(name) ? "5h" : "5h";
+      const modelWindow = AGY_MODEL_WINDOWS[name];
+      const window = modelWindow || (/weekly/i.test(name) ? "weekly" : /monthly/i.test(name) ? "monthly" : "5h");
       const resetAt = pe[3] && pe[3] !== "(none)" ? pe[3] : undefined;
       entries.push(pctEntry(name, Number(pe[2]), resetAt, window));
     }
@@ -288,7 +307,9 @@ function fetchFromStatus(providerId, section) {
   return { ...parsed, label: providerId };
 }
 
-const STATE_FILE = join(HERE, "state.json");
+// Alert-dedupe + 429 cooldown state. Container: AIUD_STATE_FILE env points at
+// the data volume. Plain node: data dir keeps it out of the source tree.
+const STATE_FILE = process.env.AIUD_STATE_FILE || join(DATA_DIR, "collector-state.json");
 const ANTHROPIC_429_COOLDOWN_MS = 30 * 60 * 1000;
 
 function readState() {
@@ -307,7 +328,7 @@ function writeState(state) {
 
 function readDashboardSettings() {
   try {
-    return JSON.parse(readFileSync(join(HERE, "..", "data", "settings.json"), "utf8"));
+    return JSON.parse(readFileSync(join(DATA_DIR, "settings.json"), "utf8"));
   } catch {
     return {};
   }
@@ -448,7 +469,7 @@ async function main() {
           if ((dash.alibabaCookie || "") !== grabbed.cookie) {
             dash.alibabaCookie = grabbed.cookie;
             try {
-              writeSettingsAtomic(join(HERE, "..", "data", "settings.json"), dash);
+              writeSettingsAtomic(join(DATA_DIR, "settings.json"), dash);
             } catch {}
           }
         }

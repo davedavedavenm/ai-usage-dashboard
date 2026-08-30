@@ -1,0 +1,7 @@
+# Docker build context = ./collector. Keep runtime state, logs and node_modules
+# out of the image: state lives on the mounted data volume, deps are installed
+# from package.json inside the build.
+Dockerfile
+state.json
+*.log
+node_modules

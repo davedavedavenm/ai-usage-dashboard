@@ -5,56 +5,94 @@ services:
     container_name: ai-usage-dashboard
     restart: unless-stopped
     ports:
-      - "8099:8099"
+      - "${DASHBOARD_PORT:-8099}:8099"
     environment:
-      - INGEST_KEY=${INGEST_KEY}
+      - INGEST_KEY=${INGEST_KEY:?set INGEST_KEY in .env (any random string)}
     volumes:
       - ./data:/app/data
 
+  # Quota collector: probes every provider every 10 min (+2-hourly Alibaba
+  # keepalive) and pushes to the server ingest endpoint. Runs fully
+  # containerized — no host cron. Mounts the ops user's credential subtrees
+  # under /creds (HOME=/creds in the image) so every path the quota CLI and
+  # token refreshers know (~/.claude, ~/.config/opencode, ~/.cache/opencode,
+  # ~/.local/share/opencode) resolves exactly as on the host. Token
+  # refreshes write back through the same mounts — the host files remain
+  # the single source of truth for the interactive CLIs (no split-brain).
+  collector:
+    build: ./collector
+    image: ai-usage-collector:latest
+    container_name: aiud-collector
+    restart: unless-stopped
+    depends_on:
+      - ai-usage-dashboard
+    environment:
+      - AIUD_INGEST_URL=http://ai-usage-dashboard:8099/api/ingest
+      # The collector reads the key from env first (readIngestKey); the stack
+      # .env is not visible inside the container.
+      - INGEST_KEY=${INGEST_KEY:?set INGEST_KEY in .env}
+      # CDP route to the qwen-browser's chromium (via the cdp-relay sharing
+      # its netns): through the compose network by service name — CDP never
+      # touches a host network interface. Falls back to key mode when the
+      # qwen profile is down (fetch fails → grab returns not-ok).
+      - AIUD_CDP_BASE=${AIUD_CDP_BASE:-http://qwen-browser:9333}
+      - AIUD_COLLECTOR_NAME=${COLLECTOR_NAME:-collector}
+      - AIUD_DASHBOARD_URL=${AIUD_DASHBOARD_URL:-http://localhost:8099}
+      - AIUD_DATA_DIR=/data
+      - AIUD_SETTINGS_PATH=/data/settings.json
+      - AIUD_STATE_FILE=/data/collector-state.json
+      - TZ=${TZ:-Europe/London}
+      - AIUD_ALERT_ENABLED=${AIUD_ALERT_ENABLED:-true}
+    volumes:
+      # Shared dashboard data dir: settings.json (Telegram/Qwen key), and
+      # collector runtime state (alert dedupe, 429 cooldown).
+      - ./data:/data
+      # Host credential subtrees (rw: token refreshers rotate and write back):
+      - ${CREDENTIALS_ROOT:?set CREDENTIALS_ROOT in .env}/.claude:/creds/.claude
+      - ${CREDENTIALS_ROOT}/.config/opencode:/creds/.config/opencode
+      - ${CREDENTIALS_ROOT}/.cache/opencode:/creds/.cache/opencode
+      - ${CREDENTIALS_ROOT}/.local/share/opencode:/creds/.local/share/opencode
+      - /etc/localtime:/etc/localtime:ro
+
   # Logged-in Chromium holding the Alibaba Bailian session (Qwen percentages).
-  # The desktop UI is password-protected (CUSTOM_USER/PASSWORD from stack
-  # .env) and published on the LAN + tailnet; CDP stays loopback-only behind
-  # the cdp-relay sidecar below — never expose DevTools to a network.
+  # The desktop UI is password-protected (QWEN_UI_USER/QWEN_UI_PASSWORD from
+  # stack .env) and published on the LAN + tailnet; CDP stays loopback-only
+  # behind the cdp-relay sidecar below — never expose DevTools to a network.
   qwen-browser:
     image: lscr.io/linuxserver/chromium:latest
     container_name: qwen-browser
     restart: unless-stopped
+    profiles: ["qwen"]
     shm_size: "1gb"
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Europe/London
-      - CUSTOM_USER=${QWEN_UI_USER:?set QWEN_UI_USER in stack .env}
-      - PASSWORD=${QWEN_UI_PASSWORD:?set QWEN_UI_PASSWORD in stack .env}
-      # Chrome ≥136 refuses CDP on a default profile dir, hence explicit
-      # --user-data-dir. Chromium now hard-binds CDP to its own loopback
+      - TZ=${TZ:-Europe/London}
+      - CUSTOM_USER=${QWEN_UI_USER:?set QWEN_UI_USER in .env}
+      - PASSWORD=${QWEN_UI_PASSWORD:?set QWEN_UI_PASSWORD in .env}
+      # Chrome >=136 refuses CDP on a default profile dir, hence explicit
+      # --user-data-dir. Chromium hard-binds CDP to its own loopback
       # (--remote-debugging-address is ignored), so 9222 stays internal and
-      # the cdp-relay sidecar below publishes it. The trailing console URL
-      # matters only if the volume is ever wiped and the image's stock
-      # /defaults/autostart (`wrapped-chromium ${CHROME_CLI}`) regenerates;
-      # on this volume the labwc supervisor (data/qwen-browser/.config/
-      # labwc/autostart, repo copy scripts/qwen-labwc-autostart.sh) owns
-      # launching and opens the same URL itself — the open Bailian tab is
-      # what keeps the Alibaba session alive server-side (root cause of the
-      # 2026-08-28 silent expiry: browser sat on a blank tab for ~34 h).
+      # the cdp-relay sidecar publishes it. The trailing console URL matters
+      # on a wiped volume (stock /defaults/autostart consumes CHROME_CLI);
+      # on this volume the labwc supervisor opens the same URL itself — the
+      # open Bailian tab is the session's keepalive (2026-08-28 incident:
+      # browser sat on a blank tab ~34 h after a relaunch, session expired).
       - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal
-    # Publish the image's HTTPS listener (container :3001, self-signed cert in
-    # ./data/qwen-browser/ssl) — Selkies' UI rejects plain-HTTP origins
-    # ("requires a secure connection"), so https:// is the supported path.
-    # CDP relay stays loopback-only.
     ports:
-      - "192.168.1.143:3099:3001"
-      - "100.65.57.85:3099:3001"
+      - "${QWEN_UI_BIND:-127.0.0.1}:${QWEN_UI_PORT:-3099}:3001"
       - "127.0.0.1:9333:9333"
     volumes:
       - ./data/qwen-browser:/config
 
-  # Chromium accepts CDP connections only from its own loopback; this sidecar
-  # shares qwen-browser's network namespace and relays 0.0.0.0:9333 (published
-  # loopback-only on the host) -> 127.0.0.1:9222 for the host-side collector.
+  # Chromium accepts CDP only from its own loopback; this sidecar shares
+  # qwen-browser's network namespace and relays 0.0.0.0:9333 (published
+  # loopback-only on the host) -> 127.0.0.1:9222 for the collector's cookie
+  # grab. The collector container reaches it via host.docker.internal.
   cdp-relay:
     image: alpine/socat:latest
     container_name: qwen-cdp-relay
     restart: unless-stopped
+    profiles: ["qwen"]
     network_mode: "service:qwen-browser"
     command: TCP-LISTEN:9333,fork,reuseaddr TCP4:127.0.0.1:9222
