@@ -79,8 +79,12 @@ services:
       # open Bailian tab is the session's keepalive (2026-08-28 incident:
       # browser sat on a blank tab ~34 h after a relaunch, session expired).
       - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal
+    # Two optional binds: LAN + tailnet in one compose file. Defaults are
+    # loopback-only so a fresh install never exposes the logged-in browser;
+    # set the vars in .env to put the desktop on your LAN/tailnet.
     ports:
       - "${QWEN_UI_BIND:-127.0.0.1}:${QWEN_UI_PORT:-3099}:3001"
+      - "${QWEN_UI_BIND2:-127.0.0.1}:${QWEN_UI_PORT2:-3098}:3001"
       - "127.0.0.1:9333:9333"
     volumes:
       - ./data/qwen-browser:/config
