@@ -42,6 +42,7 @@ docker compose up -d --build
 | `CREDENTIALS_ROOT` | — | host home dir whose credential subtrees get mounted |
 | `DASHBOARD_PORT` | `8099` | published dashboard port |
 | `QWEN_UI_BIND` / `QWEN_UI_PORT` | `127.0.0.1` / `3099` | Qwen desktop bind/port (set the bind to your LAN IP to use it remotely) |
+| `QWEN_UI_BIND2` / `QWEN_UI_PORT2` | `127.0.0.1` / `3098` | optional second bind (e.g. tailnet IP + port) |
 | `TZ` | `Europe/London` | container timezone |
 | `AIUD_ALERT_*`, Telegram | — | see §4 |
 
@@ -103,6 +104,8 @@ anything that did not report. A missing card means it was skipped, not lost.
 | Claude card dead, hint says re-login | **check the log first** — the classic false alarm is the quota CLI not finding `claude`; the collector image ships it, so if you run the collector outside Docker make sure `claude` is on PATH | log line `skipped.anthropic` tells the truth |
 | Qwen card amber `key mode` chip | console session in `qwen-browser` expired | re-login at `https://<host>:3099` (§3) |
 | Qwen percentages still missing 10 min after login | grab failed to verify | `curl http://127.0.0.1:9333/json/version` on the host (CDP up?) then check `data/qwen-browser/chrome-launch.log` |
+| Qwen desktop URL not loading | `QWEN_UI_BIND` still loopback-only (fresh-install default) | set your LAN IP in `.env`, `docker compose --profile qwen up -d` |
+| Collector log shows `CDP HTTP 500` / `Host heade...` | Host-header regression in `cdp-cookies.mjs` (Chromium DevTools validates it; must use `node:http`+`ws`, not fetch) | don't refactor those calls back to fetch |
 | `docker compose up` errors about `CREDENTIALS_ROOT` | env var unset | set it in `.env` |
 | Collector log shows `HTTP 401` on ingest | `INGEST_KEY` mismatch between server `.env` and collector | same value both sides |
 | Gemini card shows only some models | the quota CLI reports one window per model configured in `~/.config/opencode/opencode-quota/quota-toast.json` (`googleModels`) | add/remove model ids there (valid: G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS) |

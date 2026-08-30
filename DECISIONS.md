@@ -123,7 +123,9 @@ If the session dies server-side, the card degrades to key mode — shown as a
 "key mode" chip (amber) since 2026-08-30, previously a bland "quota
 available" that was easy to miss for days — until the next remote login;
 percentages reappear within one collect cycle (≤10 min). No alerts about it
-(see Telegram decision below).
+(see Telegram decision below). Full chain verified live 2026-08-30 after a
+re-login: console-tab keepalive → CDP grab (78 cookies, compose-network
+route) → verifyAliCookie ok → 65% weekly on the card.
 
 **Resilience layers (all live on khpi5):**
 - *Inside* the container, `/config/.config/labwc/autostart`
@@ -198,6 +200,35 @@ authenticated with the existing Antigravity OAuth (no extra login).
 Gotcha that sparked this: the antigravity card used to show only the Claude
 window because `googleModels` defaulted to `["CLAUDE"]` — looked like "no
 Gemini data" when it was really "no Gemini models requested".
+
+## CDP over the compose network needs a Host:localhost override — Active (2026-08-30)
+
+Chromium's DevTools endpoints (HTTP and WebSocket) reject requests whose
+`Host` header is not localhost/127.0.0.1 (hardened ~M66). The collector
+container reaches the relay at `http://qwen-browser:9333` (compose service
+name), so its natural Host header gets HTTP 500 — and undici (node's fetch
+and built-in WebSocket) **silently drops** custom Host headers (forbidden
+header per fetch spec), so the override cannot be done with fetch.
+`cdp-cookies.mjs` therefore uses `node:http` for the HTTP calls and the `ws`
+package for the WebSocket (both allow explicit Host). Symptom if regressed:
+`CDP HTTP 500` / `Unexpected token 'H', "Host heade"...` in grab results.
+
+Verified end-to-end 2026-08-30 after the Alibaba re-login: grab 78 cookies
+over the compose network → `verifyAliCookie` ok → card shows 65% weekly
+(live percentages). The whole chain works: console-tab keepalive → CDP
+grab → verify → mirror to settings.json → keepalive refresh.
+
+## Don't default away hardcoded host binds — Historical (2026-08-30 regression)
+
+When the compose file was containerized, the hardcoded
+`192.168.1.143:3099` + tailnet port binds became
+`${QWEN_UI_BIND:-127.0.0.1}` defaults; khpi5's `.env` had no such var, so
+the Qwen desktop silently vanished from the LAN ("page isn't loading").
+Lesson: when converting a hardcoded deployment value to an env-var default,
+write the old value into the target host's `.env` in the same change and
+verify the port still answers on the old address. Compose now supports two
+binds (`QWEN_UI_BIND`/`QWEN_UI_BIND2` + ports), defaults stay loopback-only
+for fresh installs, and khpi5's `.env` pins LAN + tailnet.
 
 ## Per-provider auth model — Active
 

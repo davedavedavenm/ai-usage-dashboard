@@ -75,8 +75,9 @@ Percentages come from a logged-in console session held in the dedicated
 `qwen-browser` container (headful Chromium with a password-protected remote
 desktop). The collector auto-grabs cookies from that live profile over CDP
 every cycle — **no cookie pasting**. To log in or re-login: open
-`https://<host>:3099` (accept the self-signed cert warning; creds from
-`QWEN_UI_USER`/`QWEN_UI_PASSWORD` in `.env`) and sign into
+`https://<host>:3099` (bind it to your LAN/tailnet IP via `QWEN_UI_BIND` /
+`QWEN_UI_BIND2` in `.env`; accept the self-signed cert warning; creds from
+`QWEN_UI_USER`/`QWEN_UI_PASSWORD`) and sign into
 `modelstudio.console.alibabacloud.com`. Percentages reappear within 10
 minutes. If the session dies server-side, the card shows an amber **key
 mode** chip and falls back to token-plan-key availability until you log in
