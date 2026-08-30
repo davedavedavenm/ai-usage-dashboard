@@ -3,7 +3,7 @@
 ## 1. Role & Mission
 
 You are maintaining a small LAN dashboard that shows AI subscription allowance
-(Clauude/ChatGPT/Z.ai/OpenCode Go/Gemini/Qwen) with Telegram low-allowance
+(Claude/ChatGPT/Z.ai/OpenCode Go/Gemini/Qwen) with Telegram low-allowance
 alerts. Server + collector run on **khpi5**; this Windows checkout is the
 source of truth. Your job: keep the three copies (repo ↔ khpi5 ↔ GitHub)
 aligned and the usage data actually flowing — with evidence, not assumptions.
@@ -60,8 +60,10 @@ see infra DECISIONS.md bash -s rule).
 
 See DECISIONS.md "Cron inventory". Two entries: */10 collect (flocked) and
 2-hourly `keepalive.mjs` (Alibaba session keepalive, plain HTTP). BST is
-UTC+1 — don't misread log timestamps as cron misses. There is deliberately NO
-browser automation in this stack anymore.
+UTC+1 — don't misread log timestamps as cron misses. There is deliberately
+**no agent-driven browser automation from this repo** — no MCP browser routes
+feed the collectors; the only browser in the stack is the dedicated
+`qwen-browser` container holding the Qwen login (§6).
 
 ## 6. Common Mistakes To Avoid
 
@@ -108,3 +110,10 @@ must always match what khpi5 runs plus these two docs. Never commit `.env`,
 `README.md` (architecture, API, OAuth login flows) · `DECISIONS.md` (settled
 decisions — read second) · infra repo `docs/protocols/ai-agent-reference.md`
 (SSH alias table) · infra `AGENTS.md` (fleet-wide agent protocol).
+
+## 10. MCP Tools
+
+**Tool discovery is mandatory, not optional.** Do not assume a tool exists or doesn't exist — call `retrieve_tools` on the local MCPProxy (Windows: `http://127.0.0.1:8080/mcp`; khpi5: `http://127.0.0.1:9092`) at the moment you need a capability, and verify the exact `server:tool` name before every call, especially before any write. This repo's collectors deliberately use no MCP surfaces — deployment and verification run over `ssh -o BatchMode=yes khpi5` per §4.
+
+### Signed-in Edge Browser (Windows MCPProxy only)
+For authenticated-browser tasks (e.g. observing whether the `qwen-browser` desktop at `https://192.168.1.143:3099` has loaded, signed-in sites), use the MCPProxy upstream `playwright-edge` — Microsoft's official Playwright Extension attached to the live Edge `Default` profile (`David M` / `davidm@live.co.uk`). **This route exists only on the Windows MCPProxy (`http://127.0.0.1:8080/mcp`) — khpi5 has no signed-in browser route.** This does not change the settled Qwen rule: agents must never paste cookies or automate logins — the Edge route is for observation only. Never use Edge debugging mode, port 9222, or profile clones. Canonical runbook: `C:\Users\Dave\repos\windows\mcpproxy\signed-in-edge-automation.md`; prove health with `Test-SignedInEdgeAutomation.ps1 -RequireLiveProof` before first use (operational, full gate + authenticated identity readback verified 2026-08-30).
