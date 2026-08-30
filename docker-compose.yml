@@ -29,8 +29,15 @@ services:
       # Chrome ≥136 refuses CDP on a default profile dir, hence explicit
       # --user-data-dir. Chromium now hard-binds CDP to its own loopback
       # (--remote-debugging-address is ignored), so 9222 stays internal and
-      # the cdp-relay sidecar below publishes it.
-      - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile
+      # the cdp-relay sidecar below publishes it. The trailing console URL
+      # matters only if the volume is ever wiped and the image's stock
+      # /defaults/autostart (`wrapped-chromium ${CHROME_CLI}`) regenerates;
+      # on this volume the labwc supervisor (data/qwen-browser/.config/
+      # labwc/autostart, repo copy scripts/qwen-labwc-autostart.sh) owns
+      # launching and opens the same URL itself — the open Bailian tab is
+      # what keeps the Alibaba session alive server-side (root cause of the
+      # 2026-08-28 silent expiry: browser sat on a blank tab for ~34 h).
+      - CHROME_CLI=--remote-debugging-port=9222 --user-data-dir=/config/chrome-profile https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal
     # Publish the image's HTTPS listener (container :3001, self-signed cert in
     # ./data/qwen-browser/ssl) — Selkies' UI rejects plain-HTTP origins
     # ("requires a secure connection"), so https:// is the supported path.

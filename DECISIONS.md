@@ -115,9 +115,11 @@ From then on everything is automatic, per collect:
    `keepalive.mjs` always works on the same jar as the browser. The live
    profile is the single source of truth; no split-brain.
 
-If the session dies server-side, the card degrades to key mode ("quota
-available") until the next remote login; percentages reappear within one
-collect cycle (≤10 min). No alerts about it (see Telegram decision below).
+If the session dies server-side, the card degrades to key mode — shown as a
+"key mode" chip (amber) since 2026-08-30, previously a bland "quota
+available" that was easy to miss for days — until the next remote login;
+percentages reappear within one collect cycle (≤10 min). No alerts about it
+(see Telegram decision below).
 
 **Resilience layers (both live on khpi5):**
 - *Inside* the container, `/config/.config/labwc/autostart`
@@ -127,7 +129,15 @@ collect cycle (≤10 min). No alerts about it (see Telegram decision below).
   called `wrapped-chromium` once with all output discarded (`> /dev/null`),
   so one flaky launch left a dead desktop — no processes, no logs
   (observed twice on 2026-08-26). Recreate-proof (volume persists) and it
-  never touches a running instance mid-login.
+  never touches a running instance mid-login. Since 2026-08-30 it also
+  launches Chromium **directly onto the Bailian console URL** — the open SPA
+  tab keeps the Alibaba session alive server-side with its own background
+  refreshes. Root cause of the 2026-08-28 silent expiry: after a Chromium
+  relaunch the browser sat on a blank tab for ~34 h with nothing touching
+  alibabacloud.com, and the server expired the session. (The compose
+  `CHROME_CLI` var carries the same URL but is only consumed by the image's
+  stock `/defaults/autostart` on a wiped volume — the supervisor owns
+  launching on this volume.)
 - *Outside*, the */2 cron `qwen-watchdog.sh` backstop force-recreates both
   containers when CDP on :9333 fails twice, 75 s apart. With the supervisor
   this rarely fires; keep it for kasmvnc-level death.
@@ -148,6 +158,40 @@ reading only from that single live profile. `alijar.mjs`,
 `refresh-ali-cookie.mjs`, `refresh-and-export.sh`, `keepalive-and-collect.sh`
 and `tg-notify.mjs` remain deleted; git history retains them.
 
+## google-agy probe removed — Active (2026-08-30)
+
+The `google-agy` (Antigravity CLI / AI Studio) probe was probed but skipped
+every cycle since it was added: no AGY account exists on khpi5
+(`auth_state: missing`), the companion `@anthonyhaussman/opencode-agy-auth`
+was never installed, and Dave has no AI Studio subscription. Removed from
+`STATUS_PROVIDERS` and the dashboard card meta. Do not re-add unless an AGY
+credential actually appears in `auth.json`.
+
+## google-gemini-cli enabled via opencode-gemini-auth plugin — Active (2026-08-30)
+
+Dave has a **Gemini AI subscription, not API tokens**. The subscription's
+quota buckets (Code Assist / Gemini CLI allowances) are exposed by
+opencode-quota through the `google-gemini-cli` provider, which needs:
+
+1. the `opencode-gemini-auth` companion package resolvable from the
+   collector's `node_modules` (pinned in `collector/package.json`), and
+2. a Google OAuth entry whose `refresh` field is the Gemini-CLI format
+   `refreshToken\|projectId[\|managedProjectId]` — created by running
+   `opencode auth login` → Google → **OAuth with Google (Gemini CLI)** with
+   that plugin registered in `~/.config/opencode/opencode.json` (done on
+   khpi5 2026-08-30; backup at `opencode.json.bak-20260830`).
+
+Before the login, the probe skips with `auth_state: invalid` — expected, not
+an error. Note the plugin's own README warning: Google has stated third-party
+use of Gemini CLI OAuth is policy-violating in principle; enforcement is
+currently unclear. Deliberate, informed choice to read quota only.
+
+Gotcha: `auth_state: invalid` means "OAuth entry exists but lacks
+refreshToken/projectId in Gemini-CLI format" — it does **not** mean the
+Google login is broken. Same family as the 2026-08-25 PATH incident: check
+the real reason in `/tmp/aiud-cli-google-gemini-cli.out` before telling
+anyone to re-login.
+
 ## Per-provider auth model — Active
 
 | Card | Probe | Credential | Renewal |
@@ -155,6 +199,7 @@ and `tg-notify.mjs` remain deleted; git history retains them.
 | Claude (anthropic) | opencode-quota CLI live probe | `~/.claude/.credentials.json` on khpi5 | **automatic**: `claude-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rate-limit/backoff state in `~/.claude/.oauth-refresh.json`); manual re-login only if refresh_token itself expires — SSH tunnel flow in README |
 | ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
 | Gemini/Antigravity | opencode-quota CLI | opencode `auth.json` Google OAuth | same pattern |
+| Gemini CLI (plan quotas) | opencode-quota CLI (`google-gemini-cli`) | opencode `auth.json` Google OAuth via `opencode-gemini-auth` plugin | manual re-login if it ages out (`opencode auth login` → Google → Gemini CLI); plugin registered in khpi5 `~/.config/opencode/opencode.json`, companion package pinned in `collector/package.json` |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
 | Qwen (Alibaba Token Plan) | usage API via live browser profile (CDP grab, verified); token-plan key probe fallback | logged-in session in `qwen-browser` container (mirrored to `data/settings.json`) + `auth.json` key | automatic except periodic remote login — see the Qwen decision above |

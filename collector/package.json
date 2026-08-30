@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "@slkiser/opencode-quota": "^4.8.1",
+    "opencode-gemini-auth": "^1.4.15",
     "playwright": "^1.62.1"
   }
 }

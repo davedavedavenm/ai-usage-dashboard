@@ -112,6 +112,10 @@
     border: 1px solid var(--panel-edge); color: var(--ink-dim); border-radius: 3px; padding: 4px 8px; white-space: nowrap; }
   .pstate.ok { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
   .pstate.err { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+  .pstate.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+  .card.degraded { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 35%, transparent); }
+  .vline.degrade b { color: var(--amber); }
+  .note { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); margin-top: 10px; letter-spacing: .04em; }
 
   .bighero { display: flex; align-items: center; gap: 20px; margin-top: 18px; }
   .bignum {
@@ -316,8 +320,7 @@ const META = {
   "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Check <code>opencode auth</code> for opencode-go." },
   "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
   "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Percentages come from a logged-in session in the <code>qwen-browser</code> container on khpi5, which the collector auto-grabs — no pasting. To log in or re-login open <code>https://192.168.1.143:3099</code> (LAN) or <code>https://100.65.57.85:3099</code> (tailnet; creds in stack .env; accept the self-signed cert warning) and sign into <code>modelstudio.console.alibabacloud.com</code>. Percentages reappear within 10 minutes." },
-  "google-gemini-cli":  { name: "Gemini CLI",        sub: "Google",                accent: "#a3e635" },
-  "google-agy":         { name: "AI Studio",         sub: "Google AGY",            accent: "#06b6d4" },
+  "google-gemini-cli":  { name: "Gemini CLI",        sub: "Google AI plan",        accent: "#a3e635", hint: "On the server: <code>opencode auth login</code> → Google → OAuth with Google (Gemini CLI). Needs the opencode-gemini-auth plugin." },
   "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },
   openrouter:           { name: "OpenRouter",        sub: "credits",               accent: "#8b93a7" },
   copilot:              { name: "Copilot",           sub: "GitHub",                accent: "#94a3b8" },
@@ -387,9 +390,12 @@ function cardHTML(id, prov) {
   const meta = META[id] || { ...FALLBACK, name: id };
   const status = prov?.status || "unavailable";
   const alive = status === "ok" || status === "partial";
-  const cls = alive ? "" : status === "error" ? "err dead" : "dead";
+  const degraded = id === "alibaba-coding-plan" && alive &&
+    !((prov.entries || []).some(e => e.renderType === "percent" && e.percentRemaining != null));
+  const cls = alive && !degraded ? "" : status === "error" ? "err dead" : alive && degraded ? "degraded" : "dead";
   let stateChip = "";
-  if (status === "ok") stateChip = `<span class="pstate ok">live</span>`;
+  if (degraded) stateChip = `<span class="pstate warn">key mode</span>`;
+  else if (status === "ok") stateChip = `<span class="pstate ok">live</span>`;
   else if (status === "partial") stateChip = `<span class="pstate ok">partial</span>`;
   else if (status === "error") stateChip = `<span class="pstate err">error</span>`;
   else stateChip = `<span class="pstate">not connected</span>`;
@@ -423,11 +429,14 @@ function cardHTML(id, prov) {
       }
     }
     if (values.length) {
-      body += values.map(e =>
-        `<div class="vline"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`
-      ).join("");
+      body += values.map(e => {
+        const isFallback = id === "alibaba-coding-plan" && /quota available/i.test(String(e.value || ""));
+        return `<div class="vline${isFallback ? " degrade" : ""}"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`;
+      }).join("");
     }
+    const note = prov.note ? `<div class="note">${esc(prov.note)}</div>` : "";
     body += sparkSVG(id);
+    body += note;
   } else {
     const msg = status === "error" ? esc(prov?.error || "provider error") : (meta.hint || "Not connected.");
     body = `<div class="hint">${msg}</div>`;

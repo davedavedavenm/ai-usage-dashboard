@@ -46,7 +46,7 @@ const REQ_TIMEOUT_MS = 20000;
 
 const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "Tools (MCP)" };
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
-const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity", "google-gemini-cli", "google-agy"];
+const STATUS_PROVIDERS = ["anthropic", "openai", "google-antigravity", "google-gemini-cli"];
 const ALERT_THRESHOLD_DEFAULT = 15;
 const TG_API = "https://api.telegram.org";
 

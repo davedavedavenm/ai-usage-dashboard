@@ -106,7 +106,8 @@ the API — always masked):
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` on the server |
 | Z.ai | `api.z.ai/api/monitor/usage/quota/limit` (direct) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | `opencode.ai/zen/go/v1/usage` (direct) | auth.json `opencode-go` key |
-| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) | Google OAuth on the server |
+| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) | Google OAuth on the server (`opencode-antigravity-auth` plugin) |
+| Gemini CLI (plan quotas) | `google-gemini-cli` (via opencode-quota CLI) | Google OAuth on the server (`opencode-gemini-auth` plugin; needs companion package in `collector/node_modules` + plugin registered in `~/.config/opencode/opencode.json`, then `opencode auth login` → Google → Gemini CLI) |
 | Qwen | Alibaba Token Plan usage API / token-plan probe | live Chromium profile in `qwen-browser` (CDP grab, self-healing) + token-plan key fallback |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number

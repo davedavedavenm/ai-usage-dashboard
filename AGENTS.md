@@ -74,12 +74,15 @@ feed the collectors; the only browser in the stack is the dedicated
   usage-API call (`verifyAliCookie`) counts.
 - **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
   (2026-08-26): percentages auto-grab from the `qwen-browser` container's live
-  profile over CDP. When the Qwen card loses percentages: the session died —
-  open `https://192.168.1.143:3099` (LAN; creds in stack `.env`; self-signed
+  profile over CDP. When the Qwen card shows the amber "key mode" chip: the
+  console session died — open `https://192.168.1.143:3099` (LAN; creds in stack `.env`; self-signed
   cert warning is expected) or `https://100.65.57.85:3099` (tailnet) and log
   in again. The browser
   self-heals (in-container supervisor + */2 watchdog cron recreate); only dig
-  into khpi5 if the desktop itself never loads.
+  into khpi5 if the desktop itself never loads. The supervisor launches
+  Chromium directly onto the Bailian console URL — that open tab is the
+  session's keepalive (2026-08-28 expiry: browser sat on a blank tab for
+  ~34 h after a relaunch).
 - **Start a second collector** for testing without `flock -n` on the same lock.
 - **Compare file copies by eye.** Use LF-normalized md5 both sides
   (`sed 's/\r$//' f | md5sum` remote; normalize CRLF→LF locally).
