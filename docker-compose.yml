@@ -61,6 +61,8 @@ services:
   qwen-browser:
     image: lscr.io/linuxserver/chromium:latest
     container_name: qwen-browser
+    labels:
+      - "com.getarcaneapp.arcane.updater=false"
     restart: unless-stopped
     profiles: ["qwen"]
     shm_size: "1gb"
