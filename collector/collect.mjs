@@ -336,13 +336,16 @@ function readDashboardSettings() {
 
 function readAlertConfig() {
   const lines = readParentEnv();
-  const dash = readDashboardSettings().telegram || {};
+  const dashSettings = readDashboardSettings();
+  const dash = dashSettings.telegram || {};
+  const webhook = dashSettings.webhook || {};
   const threshold = Number(dash.threshold ?? envValue(lines, "AIUD_ALERT_THRESHOLD") ?? ALERT_THRESHOLD_DEFAULT);
   return {
     enabled: dash.enabled === false ? false : envValue(lines, "AIUD_ALERT_ENABLED") !== "false",
     threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : ALERT_THRESHOLD_DEFAULT,
     token: dash.token || envValue(lines, "AIUD_TG_BOT_TOKEN"),
     chatId: dash.chatId || envValue(lines, "AIUD_TG_CHAT_ID"),
+    webhookUrl: webhook.url || envValue(lines, "AIUD_WEBHOOK_URL"),
   };
 }
 
@@ -353,6 +356,10 @@ function tightestEntry(providers) {
     let best = null;
     for (const e of r.entries) {
       if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      if (id === "google-antigravity") {
+        // Default Gemini allowance to G3Flash / non-Claude
+        if (/claude|gpt/i.test(`${e.name} ${e.window}`)) continue;
+      }
       if (!best || e.percentRemaining < best.percentRemaining) best = e;
     }
     if (best) out.push({ id, label: r.label || id, entry: best });
@@ -404,8 +411,27 @@ async function sendTelegram(cfg, text) {
   }
 }
 
+async function sendWebhook(url, payload) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+    });
+    const body = await res.text();
+    return `HTTP ${res.status} ${body.slice(0, 120)}`;
+  } catch (e) {
+    return "error " + String(e.message || e).slice(0, 120);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function runAlerts(providers, state, cfg) {
-  if (!cfg.enabled || !cfg.token || !cfg.chatId) {
+  if (!cfg.enabled || (!cfg.token && !cfg.webhookUrl)) {
     console.log(JSON.stringify({ at: new Date().toISOString(), alerts: "disabled" }));
     return;
   }
@@ -431,9 +457,24 @@ async function runAlerts(providers, state, cfg) {
       }
     }
     if (sent[stage.pct]) continue;
-    const result = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+    let tgResult = "";
+    if (cfg.token && cfg.chatId) {
+      tgResult = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+    }
+    if (cfg.webhookUrl) {
+      await sendWebhook(cfg.webhookUrl, {
+        event: "allowance_alert",
+        provider: id,
+        label,
+        entry: { name: entry.name, window: entry.window, percentRemaining: pct, resetAt: entry.resetAt },
+        stage: stage.pct,
+        threshold: cfg.threshold,
+        dashboardUrl: DASHBOARD_URL,
+        timestamp: new Date().toISOString(),
+      });
+    }
     sent[stage.pct] = new Date().toISOString();
-    state.alerts[id] = { winKey, sentAt: new Date().toISOString(), stages: sent, result };
+    state.alerts[id] = { winKey, sentAt: new Date().toISOString(), stages: sent, result: tgResult || "webhook" };
     writeState(state);
   }
 }

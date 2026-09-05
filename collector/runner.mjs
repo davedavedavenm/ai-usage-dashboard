@@ -8,10 +8,19 @@
  * Logs are JSON lines on stdout → `docker logs aiud-collector`.
  */
 import { spawn } from "child_process";
+import { existsSync, unlinkSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = process.env.AIUD_DATA_DIR || join(HERE, "..", "data");
+const TRIGGER_FILE = join(DATA_DIR, "collect.trigger");
 
 const COLLECT_INTERVAL_MS = 10 * 60 * 1000;
 const KEEPALIVE_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const RUN_TIMEOUT_MS = 9 * 60 * 1000; // < interval: a wedged run can't stall the next
+
+let collectRunning = false;
 
 function delayToNextBoundary(intervalMs) {
   const now = Date.now();
@@ -35,14 +44,42 @@ function runScript(script) {
   });
 }
 
-async function loop(script, intervalMs, label) {
-  await runScript(script); // immediate first run: a fresh stack shows data at once
-  for (;;) {
-    await new Promise((r) => setTimeout(r, delayToNextBoundary(intervalMs)));
-    const res = await runScript(script);
+async function doCollect(label = "collect") {
+  if (collectRunning) return;
+  collectRunning = true;
+  try {
+    const res = await runScript("collect.mjs");
     console.log(JSON.stringify({ at: new Date().toISOString(), scheduler: label, exit: res.code ?? res.sig }));
+  } finally {
+    collectRunning = false;
   }
 }
 
-loop("collect.mjs", COLLECT_INTERVAL_MS, "collect");
-loop("keepalive.mjs", KEEPALIVE_INTERVAL_MS, "keepalive");
+async function collectLoop() {
+  await doCollect("collect-init");
+  for (;;) {
+    await new Promise((r) => setTimeout(r, delayToNextBoundary(COLLECT_INTERVAL_MS)));
+    await doCollect("collect");
+  }
+}
+
+async function keepaliveLoop() {
+  await runScript("keepalive.mjs");
+  for (;;) {
+    await new Promise((r) => setTimeout(r, delayToNextBoundary(KEEPALIVE_INTERVAL_MS)));
+    const res = await runScript("keepalive.mjs");
+    console.log(JSON.stringify({ at: new Date().toISOString(), scheduler: "keepalive", exit: res.code ?? res.sig }));
+  }
+}
+
+// Watch for on-demand collect trigger file from server or user
+setInterval(async () => {
+  if (existsSync(TRIGGER_FILE)) {
+    try { unlinkSync(TRIGGER_FILE); } catch {}
+    console.log(JSON.stringify({ at: new Date().toISOString(), scheduler: "trigger", event: "collect_requested" }));
+    await doCollect("on-demand");
+  }
+}, 1000);
+
+collectLoop();
+keepaliveLoop();

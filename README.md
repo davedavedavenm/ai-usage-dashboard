@@ -104,7 +104,9 @@ glow.
 - `GET /api/history` — last 500 ingest records (for the per-card sparklines)
 - `GET /api/health` — health check
 - `GET /api/settings`, `POST /api/settings` — masked settings view / update
+- `POST /api/collect` — triggers an immediate on-demand quota probe
 - `POST /api/telegram-test` — sends a test Telegram message
+- `POST /api/webhook-test` — sends a test webhook alert
 - `POST /api/ingest` — collector push endpoint (requires `X-Ingest-Key`)
 
 History is appended to `data/history.jsonl` and rotated at 2 MB.

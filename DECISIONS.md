@@ -334,6 +334,32 @@ double-sending Telegram alerts; later it was reduced to only running
 `keepalive.mjs`. With the browser-retirement decision the wrapper and its
 cron line were replaced by a direct `keepalive.mjs` entry (2026-08-26).
 
+## Gemini allowance defaults to G3Flash (non-Claude) — Active (2026-09-05)
+
+Dave uses Google's Gemini AI plan. In the `google-antigravity` probe, the quota
+CLI returns multiple model windows (G3Flash, G3Pro, Claude, GPT-OSS). When
+Claude or GPT-OSS hits 0%, the card previously selected Claude as the "worst"
+window, causing the Gemini card to flash red/critical and report 0% allowance
+even when G3Flash was at 100%. The hero number, card status glow, sparkline
+representative point, and allowance threshold alerts now prioritize
+**G3Flash** (and non-Claude/non-GPT-OSS Gemini models). Secondary models
+remain fully visible in the sub-meters below the hero number.
+
+## On-demand sync via `/api/collect` trigger — Active (2026-09-05)
+
+Users can trigger an immediate probe from the UI ("Sync Now" button) or API
+(`POST /api/collect`) without waiting for the 10-minute boundary or restarting
+the collector container. The server writes `/data/collect.trigger`; the
+collector runner detects the file and executes a single-flight run
+immediately.
+
+## Outbound webhook alerts supported alongside Telegram — Active (2026-09-05)
+
+In addition to the Telegram bot, staged allowance threshold events
+(50% → 30% → 15% → 0%) can optionally dispatch a JSON POST payload to a
+configured webhook URL (`AIUD_WEBHOOK_URL` or via Settings), allowing direct
+integration with Home Assistant automations or TRMNL sidecars.
+
 ---
 
 Related: `README.md` (architecture, API, login flows) · infra repo

@@ -84,7 +84,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
     gap: 18px;
   }
   .card {
@@ -213,9 +213,27 @@
     letter-spacing: .12em; text-transform: uppercase;
     display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   }
+  .chip.btn-sync {
+    cursor: pointer; transition: all .2s ease;
+    background: rgba(255,255,255,0.06); color: var(--ink);
+    font-family: inherit; font-size: inherit; border: 1px solid var(--panel-edge);
+  }
+  .chip.btn-sync:hover:not(:disabled) {
+    background: rgba(242, 169, 59, 0.15); border-color: var(--amber); color: #fff;
+  }
+  .chip.btn-sync:disabled { opacity: .6; cursor: wait; }
+  .sync-icon { display: inline-block; font-size: 15px; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .spinning { animation: spin 1s linear infinite; }
   @media (max-width: 560px) {
     .readout .clock { font-size: 19px; }
-    .wrap { padding: 18px 14px 40px; }
+    .wrap { padding: 16px 12px 36px; }
+    .bighero { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .bignum { font-size: clamp(48px, 14vw, 84px); }
+    .mini { grid-template-columns: 80px 1fr 48px auto; gap: 6px 8px; }
+    .syncline { font-size: 13px; gap: 6px; padding: 8px 0 16px; }
+    .pname { font-size: 22px; }
+    .card { padding: 18px 16px 14px; }
   }
 </style>
 </head>
@@ -233,6 +251,9 @@
   </header>
   <div class="syncline">
     <span class="chip" id="syncChip"><span class="led"></span><span id="syncText">NO DATA</span></span>
+    <button class="chip btn-sync" id="btnSync" onclick="triggerCollect()" title="Trigger immediate quota probe">
+      <span class="sync-icon">⟳</span> <span id="btnSyncText">Sync Now</span>
+    </button>
     <span class="chip"><span class="led" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>Checks every 10 minutes</span>
     <span class="chip">Live provider APIs</span>
     <span class="chip" id="usableChip" hidden></span>
@@ -246,23 +267,34 @@
   <section class="settings" id="settingsPanel">
     <div class="sblock">
       <div class="shead">Qwen · Alibaba Token Plan</div>
-      <div class="ssub">quota via console cookie · intl (ap-southeast-1)</div>
-      <div class="srow"><span class="sstate" id="aliState">checking…</span><span class="smsg" id="aliMsg" style="margin-top:0"></span></div>
-      <label for="aliCookie">Console Cookie header (paste the whole thing, one line)</label>
-      <textarea id="aliCookie" placeholder="isg=…; cna=…; login_aliyunid_ticket=…; (the full cookie: value — usually 1500+ characters)" spellcheck="false"></textarea>
-      <div class="srow" style="margin-top:12px">
-        <button class="sbtn" id="aliSave" onclick="saveAli()">Save cookie</button>
-        <button class="sbtn secondary" onclick="document.getElementById('aliCookie').value=''">Clear field</button>
+      <div class="ssub">automatic session capture via live qwen-browser container</div>
+      <div class="srow">
+        <span class="sstate" id="aliState">checking…</span>
+        <span class="smsg" id="aliMsg" style="margin-top:0"></span>
       </div>
-      <div class="steps">
-        <b>How to get the cookie (2 minutes):</b><br>
-        1. Open the <a href="https://modelstudio.console.alibabacloud.com/ap-southeast-1/?tab=plan#/efm/subscription/token-plan/personal" target="_blank" rel="noopener">Token Plan page</a> logged in.<br>
-        2. Press <b>F12</b> → <b>Network</b> tab → refresh the page.<br>
-        3. Click any request to <code>api.json</code> → <b>right-click it → Copy → Copy as cURL (bash)</b>.<br>
-        4. In the copied text find <code>-H 'cookie: …'</code> and copy everything between the quotes.<br>
-        <b>Do not copy from the Headers pane</b> — DevTools truncates it with a <code>…</code> there and the cookie will be rejected.<br>
-        5. Paste above → Save. The card updates on the next 10-minute check.
+      <div class="steps" style="margin-top:8px">
+        <b>Live Chromium Browser Session:</b><br>
+        Percentages are auto-grabbed over CDP from the dedicated <code>qwen-browser</code> container on khpi5.<br>
+        To log in or renew your session, open the remote desktop console in your browser, and sign into Alibaba ModelStudio once:
+        <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap">
+          <a class="sbtn secondary" href="https://192.168.1.143:3099" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+            🖥️ Open Desktop (LAN: 192.168.1.143:3099)
+          </a>
+          <a class="sbtn secondary" href="https://100.65.57.85:3099" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
+            🔒 Open Desktop (Tailnet: 100.65.57.85:3099)
+          </a>
+        </div>
+        <i>Accept the self-signed certificate warning; credentials are in the stack <code>.env</code> file. The open ModelStudio tab keeps your session alive automatically.</i>
       </div>
+      <details style="margin-top:14px;font-size:12px;color:var(--ink-dim)">
+        <summary style="cursor:pointer;color:var(--ink);margin-bottom:8px">Advanced: Manual Cookie Fallback (Optional)</summary>
+        <label for="aliCookie">Console Cookie header (paste full header)</label>
+        <textarea id="aliCookie" placeholder="isg=…; cna=…; login_aliyunid_ticket=…;" spellcheck="false"></textarea>
+        <div class="srow" style="margin-top:8px">
+          <button class="sbtn" id="aliSave" onclick="saveAli()">Save cookie</button>
+          <button class="sbtn secondary" onclick="document.getElementById('aliCookie').value=''">Clear</button>
+        </div>
+      </details>
     </div>
     <div class="sblock">
       <div class="shead">Telegram alerts</div>
@@ -293,6 +325,22 @@
         2. Open a chat with your new bot and send it any message (it cannot message you first).<br>
         3. Get your <b>chat ID</b>: open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser → find <code>"chat":{"id":…}</code>.<br>
         4. Paste both above → Save → <b>Send test message</b> to confirm.
+      </div>
+    </div>
+    <div class="sblock">
+      <div class="shead">Webhook alerts</div>
+      <div class="ssub">dispatch JSON alerts on allowance stage crossings (Home Assistant / n8n / TRMNL)</div>
+      <div class="srow"><span class="sstate" id="whState">checking…</span></div>
+      <div class="srow" style="align-items:flex-start">
+        <div style="flex:1;min-width:280px">
+          <label for="whUrl">Webhook URL (POST)</label>
+          <input type="text" id="whUrl" style="width:100%" placeholder="http://192.168.1.172:5678/webhook/ai-allowance" autocomplete="off">
+        </div>
+      </div>
+      <div class="srow">
+        <button class="sbtn" id="whSave" onclick="saveWebhook()">Save Webhook</button>
+        <button class="sbtn secondary" id="whTest" onclick="testWebhook()">Send test webhook</button>
+        <span class="smsg" id="whMsg" style="margin-top:0"></span>
       </div>
     </div>
     <div class="sblock">
@@ -362,12 +410,19 @@ function sparkSVG(id) {
   const coords = pts.map((v, i) => {
     const x = (i / (pts.length - 1)) * W;
     const y = H - 2 - (Math.max(0, Math.min(100, v)) / 100) * (H - 6);
-    return x.toFixed(1) + "," + y.toFixed(1);
+    return { x: x.toFixed(1), y: y.toFixed(1), val: Math.round(v) };
   });
+  const polyCoords = coords.map(c => c.x + "," + c.y).join(" ");
   const threshY = (H - 2 - (15 / 100) * (H - 6)).toFixed(1);
-  return `<div class="spark" aria-hidden="true"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+  const last = coords[coords.length - 1];
+  const minV = Math.min(...pts);
+  const maxV = Math.max(...pts);
+  const title = `Trend: current ${last.val}% · range ${Math.round(minV)}%–${Math.round(maxV)}%`;
+
+  return `<div class="spark" title="${esc(title)}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <line x1="0" y1="${threshY}" x2="${W}" y2="${threshY}" stroke="var(--red)" stroke-width="0.7" stroke-dasharray="4 5" opacity="0.35"/>
-    <polyline points="${coords.join(" ")}" fill="none" stroke="var(--accent)" stroke-width="1.6" opacity="0.9"/>
+    <polyline points="${polyCoords}" fill="none" stroke="var(--accent)" stroke-width="1.6" opacity="0.9"/>
+    <circle cx="${last.x}" cy="${last.y}" r="2.5" fill="var(--accent)"/>
   </svg></div>`;
 }
 
@@ -405,14 +460,21 @@ function cardHTML(id, prov) {
     const percents = entries.filter(e => e.renderType === "percent" && e.percentRemaining != null).sort(sortWindows);
     const values = entries.filter(e => e.renderType !== "percent" || e.percentRemaining == null);
     if (percents.length) {
-      const worst = percents.reduce((a, b) => a.percentRemaining <= b.percentRemaining ? a : b);
-      const others = percents.filter(e => e !== worst);
-      const p = worst.percentRemaining;
+      let hero = null;
+      if (id === "google-antigravity") {
+        hero = percents.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
+               percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`)) ||
+               percents[0];
+      } else {
+        hero = percents.reduce((a, b) => a.percentRemaining <= b.percentRemaining ? a : b);
+      }
+      const others = percents.filter(e => e !== hero);
+      const p = hero.percentRemaining;
       body += `<div class="bighero">
         <div class="bignum">${Math.round(p)}<small>%</small></div>
         <div class="heroside">
-          <span class="wtag2">${windowTag(worst.window, worst.name)}</span>
-          <div class="hreset2">resets in <b class="cd" data-at="${esc(worst.resetAt || "")}">—</b><span class="wclock">${worst.resetAt ? " · " + fmtClock(worst.resetAt) : ""}</span></div>
+          <span class="wtag2">${windowTag(hero.window, hero.name)}</span>
+          <div class="hreset2">resets in <b class="cd" data-at="${esc(hero.resetAt || "")}">—</b><span class="wclock">${hero.resetAt ? " · " + fmtClock(hero.resetAt) : ""}</span></div>
         </div>
       </div>`;
       if (others.length) {
@@ -442,7 +504,16 @@ function cardHTML(id, prov) {
   }
 
   const percentsForState = (prov?.entries || []).filter(e => e.renderType === "percent" && e.percentRemaining != null);
-  const bindingPct = percentsForState.length ? Math.min(...percentsForState.map(e => e.percentRemaining)) : null;
+  let bindingPct = null;
+  if (percentsForState.length) {
+    if (id === "google-antigravity") {
+      const gemini = percentsForState.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
+                     percentsForState.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
+      bindingPct = gemini ? gemini.percentRemaining : Math.min(...percentsForState.map(e => e.percentRemaining));
+    } else {
+      bindingPct = Math.min(...percentsForState.map(e => e.percentRemaining));
+    }
+  }
   const stateCls = bindingPct == null ? "" : ` state-${pctClass(bindingPct) || "ok"}`;
   return `<section class="card ${cls}${stateCls}" style="--accent:${meta.accent}">
     <div class="card-head">
@@ -483,7 +554,17 @@ function render(record) {
     const prov = provs[id];
     if (!prov || !prov.entries) continue;
     const percents = prov.entries.filter(e => e.renderType === "percent" && e.percentRemaining != null);
-    if (percents.length) worst.push({ id, p: Math.min(...percents.map(e => e.percentRemaining)) });
+    if (percents.length) {
+      let repPct = null;
+      if (id === "google-antigravity") {
+        const gemini = percents.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
+                       percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
+        repPct = gemini ? gemini.percentRemaining : Math.min(...percents.map(e => e.percentRemaining));
+      } else {
+        repPct = Math.min(...percents.map(e => e.percentRemaining));
+      }
+      worst.push({ id, p: repPct });
+    }
   }
   if (worst.length) {
     const w = worst.sort((a, b) => a.p - b.p)[0];
@@ -605,11 +686,83 @@ async function loadSettings() {
       tgState.textContent = s.telegram.tokenSet ? "chat id missing" : "not configured";
       tgState.className = "sstate";
     }
+    const whState = document.getElementById("whState");
+    if (s.webhook && s.webhook.urlSet) {
+      whState.textContent = "configured · " + s.webhook.urlMask;
+      whState.className = "sstate ok";
+    } else {
+      whState.textContent = "not configured";
+      whState.className = "sstate";
+    }
     document.getElementById("tgChat").value = s.telegram.chatId || "";
     document.getElementById("tgThreshold").value = s.telegram.threshold;
   } catch {
     document.getElementById("aliState").textContent = "cannot reach server";
     document.getElementById("tgState").textContent = "cannot reach server";
+    document.getElementById("whState").textContent = "cannot reach server";
+  }
+}
+
+async function saveWebhook() {
+  const msg = document.getElementById("whMsg");
+  const btn = document.getElementById("whSave");
+  btn.disabled = true;
+  msg.textContent = "saving…"; msg.className = "smsg";
+  const url = document.getElementById("whUrl").value.trim();
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ webhook: { url } }),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = j.error || "save failed"; msg.className = "smsg err"; }
+    else {
+      msg.textContent = url ? "saved" : "cleared"; msg.className = "smsg ok";
+      document.getElementById("whUrl").value = "";
+      loadSettings();
+    }
+  } catch (e) {
+    msg.textContent = "save failed: " + e.message; msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function testWebhook() {
+  const msg = document.getElementById("whMsg");
+  const btn = document.getElementById("whTest");
+  btn.disabled = true;
+  msg.textContent = "sending…"; msg.className = "smsg";
+  try {
+    const r = await fetch("/api/webhook-test", { method: "POST" });
+    const j = await r.json();
+    if (r.ok && j.ok) { msg.textContent = "sent — HTTP " + (j.status || 200); msg.className = "smsg ok"; }
+    else { msg.textContent = "failed: " + (j.error || j.detail || "status " + j.status); msg.className = "smsg err"; }
+  } catch (e) {
+    msg.textContent = "failed: " + e.message; msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function triggerCollect() {
+  const btn = document.getElementById("btnSync");
+  const text = document.getElementById("btnSyncText");
+  const icon = btn.querySelector(".sync-icon");
+  btn.disabled = true;
+  if (icon) icon.classList.add("spinning");
+  text.textContent = "Syncing…";
+  try {
+    await fetch("/api/collect", { method: "POST" });
+    await new Promise(r => setTimeout(r, 4500));
+    await refresh();
+  } catch (e) {
+    console.error("Trigger collect failed", e);
+  } finally {
+    if (icon) icon.classList.remove("spinning");
+    text.textContent = "Sync Now";
+    btn.disabled = false;
   }
 }
 

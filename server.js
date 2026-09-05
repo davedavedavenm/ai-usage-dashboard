@@ -10,6 +10,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const LATEST = path.join(DATA_DIR, "latest.json");
 const HISTORY = path.join(DATA_DIR, "history.jsonl");
 const SETTINGS = path.join(DATA_DIR, "settings.json");
+const TRIGGER_FILE = path.join(DATA_DIR, "collect.trigger");
 const HISTORY_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_BODY = 512 * 1024;
 
@@ -51,6 +52,10 @@ function settingsView() {
       tokenSet: !!(s.telegram && s.telegram.token),
       tokenMask: maskSecret(s.telegram && s.telegram.token),
     },
+    webhook: {
+      urlSet: !!(s.webhook && typeof s.webhook.url === "string" && s.webhook.url),
+      urlMask: maskSecret((s.webhook && typeof s.webhook.url === "string") ? s.webhook.url : ""),
+    },
     alibaba: {
       cookieSet: cookie.length > 200,
       cookieLen: cookie.length,
@@ -89,10 +94,14 @@ const server = http.createServer((req, res) => {
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
     });
+    if (req.method === "HEAD") {
+      res.end();
+      return;
+    }
     res.end(body);
   };
 
-  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+  if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/" || url.pathname === "/index.html")) {
     try {
       const html = fs.readFileSync(path.join(__dirname, "public", "index.html"));
       return send(200, html, "text/html; charset=utf-8");
@@ -101,11 +110,11 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  if (req.method === "GET" && url.pathname === "/api/health") {
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/health") {
     return send(200, JSON.stringify({ ok: true, uptime: process.uptime() }));
   }
 
-  if (req.method === "GET" && url.pathname === "/api/quota") {
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/quota") {
     try {
       const raw = fs.readFileSync(LATEST);
       return send(200, raw);
@@ -114,7 +123,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  if (req.method === "GET" && url.pathname === "/api/history") {
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/history") {
     try {
       const lines = fs.readFileSync(HISTORY, "utf8").split("\n").filter(Boolean).slice(-500);
       const out = [];
@@ -127,8 +136,17 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  if (req.method === "GET" && url.pathname === "/api/settings") {
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/settings") {
     return send(200, JSON.stringify(settingsView()));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/collect") {
+    try {
+      fs.writeFileSync(TRIGGER_FILE, JSON.stringify({ at: Date.now() }));
+      return send(200, JSON.stringify({ ok: true, triggeredAt: Date.now() }));
+    } catch (e) {
+      return send(500, JSON.stringify({ error: "failed to trigger collect: " + e.message }));
+    }
   }
 
   if (req.method === "POST" && url.pathname === "/api/settings") {
@@ -165,6 +183,15 @@ const server = http.createServer((req, res) => {
           s.telegram.threshold = th;
         }
         if (typeof parsed.telegram.enabled === "boolean") s.telegram.enabled = parsed.telegram.enabled;
+      }
+      if (parsed.webhook && typeof parsed.webhook === "object") {
+        s.webhook = s.webhook || {};
+        if (typeof parsed.webhook.url === "string") {
+          const u = parsed.webhook.url.trim();
+          if (u === "") delete s.webhook.url;
+          else if (!/^https?:\/\//i.test(u)) return send(422, '{"error":"webhook URL must start with http:// or https://"}');
+          else s.webhook.url = u;
+        }
       }
       if (typeof parsed.alibabaCookie === "string") {
         const c = parsed.alibabaCookie.trim();
@@ -223,6 +250,41 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/webhook-test") {
+    const s = readSettings();
+    const webhookUrl = s.webhook && s.webhook.url;
+    if (!webhookUrl) return send(422, '{"error":"set webhook URL first in Settings"}');
+    const payload = JSON.stringify({
+      event: "test",
+      message: "Test alert from AI Allowance Dashboard",
+      timestamp: new Date().toISOString(),
+    });
+    try {
+      const u = new URL(webhookUrl);
+      const client = u.protocol === "https:" ? https : http;
+      const reqOpts = {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+        timeout: 5000,
+      };
+      const wr = client.request(u, reqOpts, (r) => {
+        let wb = "";
+        r.on("data", c => wb += c);
+        r.on("end", () => {
+          const ok = r.statusCode >= 200 && r.statusCode < 300;
+          send(ok ? 200 : 502, JSON.stringify({ ok, status: r.statusCode, detail: wb.slice(0, 120) }));
+        });
+      });
+      wr.on("error", (e) => send(502, JSON.stringify({ ok: false, detail: String(e.message).slice(0, 120) })));
+      wr.on("timeout", () => { wr.destroy(); send(504, '{"ok":false,"detail":"timeout"}'); });
+      wr.write(payload);
+      wr.end();
+    } catch (e) {
+      return send(422, JSON.stringify({ error: "invalid webhook URL: " + e.message }));
+    }
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/ingest") {
     if (!keyMatches(req.headers["x-ingest-key"])) return send(401, '{"error":"unauthorized"}');
     let body = Buffer.alloc(0);
@@ -251,15 +313,33 @@ const server = http.createServer((req, res) => {
         fs.writeFileSync(tmp, JSON.stringify(record));
         fs.renameSync(tmp, LATEST);
         const p = {};
+        const w = {};
         for (const [id, r] of Object.entries(parsed.providers || {})) {
           if (!r || !Array.isArray(r.entries)) continue;
           let tight = null;
+          let geminiPreferred = null;
           for (const e of r.entries) {
-            if (e && e.renderType === "percent" && typeof e.percentRemaining === "number" && (tight === null || e.percentRemaining < tight)) tight = e.percentRemaining;
+            if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+            const winKey = e.window || e.name || "default";
+            w[`${id}:${winKey}`] = e.percentRemaining;
+            if (id === "google-antigravity") {
+              const isClaudeOrGpt = /claude|gpt/i.test(`${e.name} ${e.window}`);
+              const isG3Flash = /flash/i.test(`${e.name} ${e.window}`);
+              if (isG3Flash) {
+                geminiPreferred = e.percentRemaining;
+              } else if (!isClaudeOrGpt && (geminiPreferred === null || e.percentRemaining < geminiPreferred)) {
+                geminiPreferred = e.percentRemaining;
+              }
+            }
+            if (tight === null || e.percentRemaining < tight) tight = e.percentRemaining;
           }
-          if (tight !== null) p[id] = tight;
+          if (id === "google-antigravity" && geminiPreferred !== null) {
+            p[id] = geminiPreferred;
+          } else if (tight !== null) {
+            p[id] = tight;
+          }
         }
-        fs.appendFileSync(HISTORY, JSON.stringify({ receivedAt, exportedAt: parsed.exportedAt || null, p }) + "\n");
+        fs.appendFileSync(HISTORY, JSON.stringify({ receivedAt, exportedAt: parsed.exportedAt || null, p, w }) + "\n");
         rotateHistory();
         return send(204, "");
       } catch (e) {
