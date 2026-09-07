@@ -478,6 +478,16 @@ async function runAlerts(providers, state, cfg) {
     const winKey = winKeyOf(entry);
     state.alerts = state.alerts || {};
     const windowId = entry.window || entry.name || "unspecified";
+    const legacy = state.alerts[id];
+    if (legacy?.winKey) {
+      const legacyWindowId = legacy.winKey.split("|")[0] || windowId;
+      state.alertWindows = state.alertWindows || {};
+      state.alertWindows[id] = state.alertWindows[id] || {};
+      if (!state.alertWindows[id][legacyWindowId]) {
+        state.alertWindows[id][legacyWindowId] = legacy;
+        writeState(state); // Preserve old window before another overwrites it.
+      }
+    }
     // Keep each window's receipts when another window becomes the tightest.
     // Fall back to the legacy last-window record during migration.
     const prev = state.alertWindows?.[id]?.[windowId] || state.alerts[id];

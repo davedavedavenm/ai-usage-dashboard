@@ -100,6 +100,19 @@ test('alternating tightest windows retains each receipt history across restart',
   assert.equal(restarted.calls.length, 0);
 });
 
+test('legacy window is migrated before another window replaces the old record', async () => {
+  const h = harness(), cfg = { ...config, webhookUrl: '' };
+  const state = { alerts: { fixture: { winKey: 'weekly|2026-09-14T06:34:00Z', stages: { 15: '2026-09-07T10:00:00Z' } } } };
+  const data = provider(14);
+  data.fixture.entries.push({ ...data.fixture.entries[0], name: 'Short', window: 'short', percentRemaining: 10 });
+  await h.context.runAlerts(data, state, cfg);
+  const restarted = harness();
+  data.fixture.entries[1].percentRemaining = 100;
+  await restarted.context.runAlerts(data, h.writes.at(-1), cfg);
+  assert.equal(h.calls.length, 1);
+  assert.equal(restarted.calls.length, 0);
+});
+
 test('state persistence uses fsync + rename; read/write failures stay visible', () => {
   const stateCode = source.slice(source.indexOf('function readState()'), source.indexOf('function readDashboardSettings()'));
   const calls = [];
