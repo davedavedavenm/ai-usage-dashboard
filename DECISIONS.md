@@ -276,6 +276,16 @@ by design:
   "action needed" notifications (retired 2026-08-26).
 - Test channel: Settings tab → *Send test message* (POST `/api/telegram-test`).
 
+**Receipt repair (2026-09-07):** each provider/window retains its own stage
+receipts when another window becomes the tightest. New receipts are recorded
+independently for Telegram (HTTP success and `ok:true`) and configured webhooks
+(their generic HTTP 2xx contract). Failed sends retry on a later fresh collection;
+one destination cannot mask another's failure. Exhaustion is its own stage.
+State writes use fsync and atomic replacement; malformed/read-failed history is
+an explicit error rather than an automatic dedupe reset. Legacy sent records are
+preserved, not replayed. Delivery remains at least once across a send/commit crash.
+Dave's preference about midpoint notices is pending; thresholds remain unchanged.
+
 Do not create a second bot or hardcode chat ids anywhere.
 
 ## Windows workstation needs nothing installed — Active

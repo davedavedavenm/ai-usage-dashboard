@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, renameSync, openSync, closeSync, fsyncSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { execFileSync } from "child_process";
@@ -314,16 +314,48 @@ const ANTHROPIC_429_COOLDOWN_MS = 30 * 60 * 1000;
 
 function readState() {
   try {
-    return JSON.parse(readFileSync(STATE_FILE, "utf8"));
-  } catch {
-    return {};
+    const state = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+    if (!state || typeof state !== "object" || Array.isArray(state)) throw new Error("invalid state");
+    validateAlertState(state);
+    return state;
+  } catch (error) {
+    if (error.code === "ENOENT") return {};
+    throw new Error("Collector state could not be read; refusing to reset alert history");
+  }
+}
+
+function validateAlertState(state) {
+  const object = value => value && typeof value === "object" && !Array.isArray(value);
+  const record = value => {
+    if (!object(value)) throw new Error("invalid alert record");
+    if (value.stages !== undefined) {
+      if (!object(value.stages)) throw new Error("invalid stages");
+      for (const [level, receipt] of Object.entries(value.stages)) {
+        if (!Number.isFinite(Number(level)) || Number(level) < 0 || Number(level) > 100) throw new Error("invalid stage");
+        if (typeof receipt === "string" || receipt === true) continue;
+        if (!object(receipt) || Object.entries(receipt).some(([channel, stamp]) => !["telegram", "webhook"].includes(channel) || typeof stamp !== "string")) throw new Error("invalid receipt");
+      }
+    }
+  };
+  if (state.alerts !== undefined) {
+    if (!object(state.alerts)) throw new Error("invalid alerts");
+    Object.values(state.alerts).forEach(record);
+  }
+  if (state.alertWindows !== undefined) {
+    if (!object(state.alertWindows)) throw new Error("invalid windows");
+    for (const windows of Object.values(state.alertWindows)) {
+      if (!object(windows)) throw new Error("invalid provider windows");
+      Object.values(windows).forEach(record);
+    }
   }
 }
 
 function writeState(state) {
-  try {
-    writeFileSync(STATE_FILE, JSON.stringify(state));
-  } catch {}
+  const temporary = STATE_FILE + ".tmp-" + process.pid;
+  writeFileSync(temporary, JSON.stringify(state), { mode: 0o600, flush: true });
+  renameSync(temporary, STATE_FILE);
+  const directory = openSync(dirname(STATE_FILE), "r");
+  try { fsyncSync(directory); } finally { closeSync(directory); }
 }
 
 function readDashboardSettings() {
@@ -373,6 +405,7 @@ function buildStages(threshold) {
     { pct: 50, emoji: "🟡", headline: "half gone", line: "Halfway through" },
     { pct: 30, emoji: "🟠", headline: "getting low", line: "Getting low" },
     { pct: final, emoji: "🔴", headline: "nearly out", line: "Nearly out" },
+    { pct: 0, emoji: "🚨", headline: "is out of allowance", line: "Nothing left" },
   ].sort((a, b) => b.pct - a.pct);
 }
 
@@ -402,10 +435,10 @@ async function sendTelegram(cfg, text) {
       body: JSON.stringify({ chat_id: cfg.chatId, text, parse_mode: "HTML" }),
       signal: ctrl.signal,
     });
-    const body = await res.text();
-    return `HTTP ${res.status} ${body.slice(0, 120)}`;
+    const body = await res.json().catch(() => null);
+    return { ok: res.ok && body?.ok === true, status: res.status };
   } catch (e) {
-    return "error " + String(e.message || e).slice(0, 120);
+    return { ok: false, status: "transport-error" };
   } finally {
     clearTimeout(t);
   }
@@ -421,10 +454,10 @@ async function sendWebhook(url, payload) {
       body: JSON.stringify(payload),
       signal: ctrl.signal,
     });
-    const body = await res.text();
-    return `HTTP ${res.status} ${body.slice(0, 120)}`;
+    await res.arrayBuffer();
+    return { ok: res.ok, status: res.status };
   } catch (e) {
-    return "error " + String(e.message || e).slice(0, 120);
+    return { ok: false, status: "transport-error" };
   } finally {
     clearTimeout(t);
   }
@@ -444,25 +477,41 @@ async function runAlerts(providers, state, cfg) {
     if (!stage) continue;
     const winKey = winKeyOf(entry);
     state.alerts = state.alerts || {};
-    const prev = state.alerts[id];
+    const windowId = entry.window || entry.name || "unspecified";
+    // Keep each window's receipts when another window becomes the tightest.
+    // Fall back to the legacy last-window record during migration.
+    const prev = state.alertWindows?.[id]?.[windowId] || state.alerts[id];
     let sent = {};
     if (prev && prev.winKey) {
       const pk = prev.winKey.split("|");
       const ck = winKey.split("|");
-      const sameReset = pk[1] && ck[1] &&
-        Math.abs(new Date(norm(pk[1])).getTime() - new Date(norm(ck[1])).getTime()) < 2 * 3600 * 1000;
+      const sameReset = (!pk[1] && !ck[1]) || (pk[1] && ck[1] &&
+        Math.abs(new Date(norm(pk[1])).getTime() - new Date(norm(ck[1])).getTime()) < 2 * 3600 * 1000);
       if (pk[0] === ck[0] && sameReset) {
         sent = (prev.stages && typeof prev.stages === "object") ? prev.stages : {};
         if (!prev.stages && pct <= ALERT_THRESHOLD_DEFAULT) sent[stage.pct] = true;
       }
     }
-    if (sent[stage.pct]) continue;
-    let tgResult = "";
-    if (cfg.token && cfg.chatId) {
-      tgResult = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+    // Legacy strings are retained as sent, without replaying uncertain history.
+    // New receipts are per destination so one success cannot mask another failure.
+    const delivered = channel => Object.entries(sent).some(([level, receipt]) =>
+      Number(level) <= stage.pct && (typeof receipt === "string" || receipt === true || receipt?.[channel]));
+    const saveReceipt = channel => {
+      const receipt = sent[stage.pct];
+      sent[stage.pct] = { ...(receipt && typeof receipt === "object" ? receipt : {}), [channel]: new Date().toISOString() };
+      state.alerts[id] = { winKey, stages: sent };
+      state.alertWindows = state.alertWindows || {};
+      state.alertWindows[id] = state.alertWindows[id] || {};
+      state.alertWindows[id][windowId] = { winKey, stages: sent };
+      writeState(state);
+    };
+    if (cfg.token && cfg.chatId && !delivered("telegram")) {
+      const result = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+      if (result.ok) saveReceipt("telegram");
+      else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", status: result.status }));
     }
-    if (cfg.webhookUrl) {
-      await sendWebhook(cfg.webhookUrl, {
+    if (cfg.webhookUrl && !delivered("webhook")) {
+      const result = await sendWebhook(cfg.webhookUrl, {
         event: "allowance_alert",
         provider: id,
         label,
@@ -472,10 +521,9 @@ async function runAlerts(providers, state, cfg) {
         dashboardUrl: DASHBOARD_URL,
         timestamp: new Date().toISOString(),
       });
+      if (result.ok) saveReceipt("webhook");
+      else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "webhook", status: result.status }));
     }
-    sent[stage.pct] = new Date().toISOString();
-    state.alerts[id] = { winKey, sentAt: new Date().toISOString(), stages: sent, result: tgResult || "webhook" };
-    writeState(state);
   }
 }
 
