@@ -25,3 +25,25 @@ Source b506f1d deployed after a private exact-preimage backup and nine tests ins
 - First normal startup collection: `2026-09-07T20:12:11.848Z`, ingest HTTP204, all six providers OK; quota `receivedAt=1788811931847`. No synthetic chat message.
 
 Rollback: restore backed-up `collect.mjs`, remove only the newly introduced test file from the deploy context if reverting the source fully, retag the retained old image to `ai-usage-collector:latest`, and `docker compose up -d --no-deps collector`. Preserve live receipt history and credentials rather than restoring stale state. Threshold preference remains pending; transport repair does not imply midpoint notices were requested.
+
+
+## 8 September - approved midpoint notice removal (source prepared)
+
+Removed only the fixed 50% and 30% stages after Dave's approval. Configured
+near-exhaustion (default 15%), exhaustion and all provider/window/destination
+receipts remain. Old midpoint history remains without retrying those notices.
+No retired cookie/session notices are reintroduced.
+
+Ten production-function tests pass (`node --test collector/alerts.test.mjs`)
+and syntax passes (`node --check collector/collect.mjs`). The new regression
+checks silent midpoint samples, identical retained state and subsequent threshold
+alerts. Existing partial-destination/restart and exhaustion tests remain green.
+
+Deployment awaits the serialized slot. Verify expected installed source preimage
+`f389a8b6ad59d5f126b411433ea619917470f7766e8ea5f8981071d9b932eca3` from
+the receipt repair, plus current image. Privately back up source/image, install LF
+source and tests, build only collector, run isolated tests with network disabled,
+and switch only collector at an idle boundary. Preserve runtime settings/history,
+receipts and credentials. Verify container source hash and next normal collection
+and ingest without synthetic sends. Rollback restores source/image, never stale
+receipt state. Source preparation does not claim production deployment.

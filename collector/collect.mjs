@@ -402,8 +402,6 @@ function tightestEntry(providers) {
 function buildStages(threshold) {
   const final = Math.max(5, Math.min(Number(threshold) || 15, 49));
   return [
-    { pct: 50, emoji: "🟡", headline: "half gone", line: "Halfway through" },
-    { pct: 30, emoji: "🟠", headline: "getting low", line: "Getting low" },
     { pct: final, emoji: "🔴", headline: "nearly out", line: "Nearly out" },
     { pct: 0, emoji: "🚨", headline: "is out of allowance", line: "Nothing left" },
   ].sort((a, b) => b.pct - a.pct);

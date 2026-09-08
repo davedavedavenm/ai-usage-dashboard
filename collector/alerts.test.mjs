@@ -81,9 +81,9 @@ test('missing reset does not cause a repeat every collection', async () => {
   assert.equal(h.calls.length, 2);
 });
 
-test('existing threshold stages preserved while preference is pending', () => {
+test('only configured near-exhaustion and exhausted stages remain', () => {
   const h = harness();
-  assert.deepEqual(Array.from(h.context.buildStages(15), stage => stage.pct), [50, 30, 15, 0]);
+  assert.deepEqual(Array.from(h.context.buildStages(15), stage => stage.pct), [15, 0]);
 });
 
 test('alternating tightest windows retains each receipt history across restart', async () => {
@@ -130,4 +130,24 @@ test('state persistence uses fsync + rename; read/write failures stay visible', 
   assert.deepEqual(calls.slice(1).map(c => c[0]), ['rename', 'fsync', 'close']);
   context.writeFileSync = () => { throw new Error('disk full'); };
   assert.throws(() => context.writeState({}), /disk full/);
+});
+
+
+test('midpoint samples stay silent and preserve old provider/window receipts', async () => {
+  const h = harness();
+  const record = { winKey: 'weekly|2026-09-14T06:34:00Z', stages: {
+    50: { telegram: '2026-09-07T10:00:00Z' },
+    30: { webhook: '2026-09-07T11:00:00Z' },
+  } };
+  const state = { alerts: { fixture: record }, alertWindows: { fixture: { weekly: record } }, unrelated: { retained: true } };
+  const before = JSON.stringify(state);
+  for (const pct of [80, 50, 40, 30, 25, 16]) await h.context.runAlerts(provider(pct), state, config);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.writes.length, 0);
+  assert.equal(JSON.stringify(state), before);
+  await h.context.runAlerts(provider(15), state, config);
+  assert.equal(h.calls.length, 2);
+  assert.equal(state.alertWindows.fixture.weekly.stages[50].telegram, '2026-09-07T10:00:00Z');
+  assert.equal(state.alertWindows.fixture.weekly.stages[30].webhook, '2026-09-07T11:00:00Z');
+  assert.equal(state.unrelated.retained, true);
 });

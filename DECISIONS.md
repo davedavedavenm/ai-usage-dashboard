@@ -284,7 +284,10 @@ one destination cannot mask another's failure. Exhaustion is its own stage.
 State writes use fsync and atomic replacement; malformed/read-failed history is
 an explicit error rather than an automatic dedupe reset. Legacy sent records are
 preserved, not replayed. Delivery remains at least once across a send/commit crash.
-Dave's preference about midpoint notices is pending; thresholds remain unchanged.
+**Superseded 2026-09-08:** Dave approved removing the fixed 50% and 30%
+midpoint stages described above. Only the configured near-exhaustion threshold
+(default 15%) and exhaustion remain. Old provider/window/destination receipts
+are preserved. No retired cookie/session notices are reintroduced.
 
 Do not create a second bot or hardcode chat ids anywhere.
 
@@ -365,7 +368,8 @@ immediately.
 
 ## Outbound webhook alerts supported alongside Telegram — Active (2026-09-05)
 
-In addition to the Telegram bot, staged allowance threshold events
+In addition to the Telegram bot, staged allowance threshold events (historical midpoint stages below were removed
+on 2026-09-08; only near-exhaustion and exhaustion remain)
 (50% → 30% → 15% → 0%) can optionally dispatch a JSON POST payload to a
 configured webhook URL (`AIUD_WEBHOOK_URL` or via Settings), allowing direct
 integration with Home Assistant automations or TRMNL sidecars.
