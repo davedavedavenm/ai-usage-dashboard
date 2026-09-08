@@ -27,7 +27,7 @@ Source b506f1d deployed after a private exact-preimage backup and nine tests ins
 Rollback: restore backed-up `collect.mjs`, remove only the newly introduced test file from the deploy context if reverting the source fully, retag the retained old image to `ai-usage-collector:latest`, and `docker compose up -d --no-deps collector`. Preserve live receipt history and credentials rather than restoring stale state. Threshold preference remains pending; transport repair does not imply midpoint notices were requested.
 
 
-## 8 September - approved midpoint notice removal (source prepared)
+## 8 September - approved midpoint notice removal (deployed 05:46 UTC)
 
 Removed only the fixed 50% and 30% stages after Dave's approval. Configured
 near-exhaustion (default 15%), exhaustion and all provider/window/destination
@@ -39,11 +39,27 @@ and syntax passes (`node --check collector/collect.mjs`). The new regression
 checks silent midpoint samples, identical retained state and subsequent threshold
 alerts. Existing partial-destination/restart and exhaustion tests remain green.
 
-Deployment awaits the serialized slot. Verify expected installed source preimage
+The deployment plan below was completed on 8 September; it is retained as the
+rollback/redeployment contract. Verify expected installed source preimage
 `f389a8b6ad59d5f126b411433ea619917470f7766e8ea5f8981071d9b932eca3` from
 the receipt repair, plus current image. Privately back up source/image, install LF
 source and tests, build only collector, run isolated tests with network disabled,
 and switch only collector at an idle boundary. Preserve runtime settings/history,
 receipts and credentials. Verify container source hash and next normal collection
 and ingest without synthetic sends. Rollback restores source/image, never stale
-receipt state. Source preparation does not claim production deployment.
+receipt state.
+
+
+Source `02fabb5` deployed at 2026-09-08T05:46:01Z. Private backup:
+`/home/dave/.secrets/notification-review/ai-midpoint-20260908T054449Z`.
+Collector image: `sha256:e32568d0b4d6f71066bf37904cd81cc59f43e60af2db6d183f27f0cf59738eca`.
+Source SHA256: `776bfe3a41fb72928b87c3461b1e7dfe2cca7b2732b1b9c7c633a229a7fcd11e`.
+All dependency layers were cached with the same Node base; ten network-isolated
+tests passed. Only aiud-collector changed. Its first natural initialization run
+at 05:46:09.414 UTC ingested HTTP204 with all six provider results OK;
+quota receivedAt was `1788846369412`. No synthetic message was sent.
+
+Qwen's existing console session is expired and collection uses its configured
+key fallback. A successful provider collection does not claim that console login
+is restored. The existing interactive renewal instructions still apply; no
+retired session notices were reintroduced by this change.
