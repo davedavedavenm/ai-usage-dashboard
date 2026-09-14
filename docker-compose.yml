@@ -36,6 +36,10 @@ services:
       # touches a host network interface. Falls back to key mode when the
       # qwen profile is down (fetch fails → grab returns not-ok).
       - AIUD_CDP_BASE=${AIUD_CDP_BASE:-http://qwen-browser:9333}
+      # Qwen token-plan percentages via bailian-cli (main-account AccessKey
+      # in /data/bailian; self-refreshing, no browser session needed).
+      - BAILIAN_CONFIG_DIR=/data/bailian
+      - DO_NOT_TRACK=1
       - AIUD_COLLECTOR_NAME=${COLLECTOR_NAME:-collector}
       - AIUD_DASHBOARD_URL=${AIUD_DASHBOARD_URL:-http://localhost:8099}
       - AIUD_DATA_DIR=/data

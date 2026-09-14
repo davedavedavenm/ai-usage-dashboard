@@ -6,17 +6,18 @@ Qwen — with Telegram alerts when any window runs low.
 
 Everything runs in containers: the server is a single zero-dependency Node
 file, the collector probes the providers' quota APIs every 10 minutes and
-pushes results via a key-protected ingest endpoint, and (optionally) a
-dedicated browser container holds the Qwen console login. No host cron, no
-workstation dependencies.
+pushes results via a key-protected ingest endpoint. Qwen percentages come
+from the official `bailian-cli` with an Alibaba Cloud AccessKey (see *Qwen*
+below); the legacy `qwen-browser` remote-desktop profile remains in the repo
+as an optional fallback. No host cron, no workstation dependencies.
 
 ```
 provider quota APIs (Z.ai, opencode.ai, Anthropic/OpenAI OAuth, Google AI, Alibaba ...)
         │
 collector container ── runner.mjs (every 10 min) ──> POST /api/ingest (X-Ingest-Key)
-        │                                                   │
-        └── qwen-browser container ──CDP cookie grab──┘       ▼
-                                              server container ── GET / dashboard
+        │                 └── bailian-cli → Alibaba token-plan usage API
+        ▼
+server container ── GET / dashboard
 ```
 
 ## Quick start
@@ -33,7 +34,7 @@ the collector has credentials to report (see *Connecting accounts* below).
 Optional profiles:
 
 ```bash
-docker compose --profile qwen up -d        # Qwen live-percentage browser
+docker compose --profile qwen up -d        # legacy Qwen browser fallback (normally off)
 docker compose logs -f collector           # JSON collector log lines
 ```
 
@@ -71,17 +72,28 @@ The collector picks new credentials up on its next 10-minute run.
 
 ### Qwen (Alibaba Token Plan)
 
-Percentages come from a logged-in console session held in the dedicated
-`qwen-browser` container (headful Chromium with a password-protected remote
-desktop). The collector auto-grabs cookies from that live profile over CDP
-every cycle — **no cookie pasting**. To log in or re-login: open
-`https://<host>:3099` (bind it to your LAN/tailnet IP via `QWEN_UI_BIND` /
-`QWEN_UI_BIND2` in `.env`; accept the self-signed cert warning; creds from
-`QWEN_UI_USER`/`QWEN_UI_PASSWORD`) and sign into
-`modelstudio.console.alibabacloud.com`. Percentages reappear within 10
-minutes. If the session dies server-side, the card shows an amber **key
-mode** chip and falls back to token-plan-key availability until you log in
-again.
+Percentages come from the official `bailian-cli` (`bl usage token-plan`),
+authenticated with an Alibaba Cloud AccessKey stored in
+`data/bailian/config.json` (gitignored, same handling as `settings.json`).
+The CLI self-refreshes its console token from the AccessKey, so this source
+survives console-session expiry — **no browser, no periodic login**.
+
+One-time setup (on the stack host):
+
+```bash
+bash collector/qwen-openapi-setup.sh   # prompts for the AccessKey ID/secret
+```
+
+The key must belong to the account that owns the token-plan: the plan is
+personal and a RAM sub-user is refused with
+`BailianGateway.Team.NotAuthorised` (verified 2026-09-14) — hence the
+main-account AccessKey, an accepted risk recorded in DECISIONS.md. Rotate it
+in the RAM console if it may have been exposed; re-run the setup script to
+store the new key.
+
+If the CLI source fails, the collector degrades through the legacy
+`qwen-browser` CDP grab / settings cookie and finally the token-plan API key
+(amber **key mode** chip: available / exhausted + reset, no percentages).
 
 ## Provider coverage
 
@@ -92,7 +104,7 @@ again.
 | Z.ai | direct quota API | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Pro, G3Flash, …) | `opencode auth login` → Google (Antigravity) |
-| Qwen | Alibaba Token Plan usage API / token-plan probe | live Chromium profile in `qwen-browser` (CDP grab, self-healing) + token-plan key fallback |
+| Qwen | Alibaba Token Plan usage API (via `bailian-cli`) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red
@@ -117,8 +129,9 @@ History is appended to `data/history.jsonl` and rotated at 2 MB.
   credential files mounted into the collector (never copied into images).
 - The dashboard page and API are intended for trusted LAN use only (no auth
   on the page itself; the ingest endpoint is key-protected).
-- The Qwen remote desktop is password-protected; its CDP (DevTools) port is
-  bound to host loopback only — never expose it to a network.
+- The legacy Qwen remote desktop (optional `qwen` profile, normally off) is
+  password-protected; its CDP (DevTools) port is bound to host loopback only
+  — never expose it to a network.
 - The Settings API always masks stored values.
 
 ## New user?

@@ -69,17 +69,25 @@ auto-refreshed by the collector before every probe** — re-login is only
 needed if a refresh token itself is revoked (rare; the card's hint text
 will say so).
 
-### Qwen live percentages (optional)
+### Qwen live percentages
 
-1. `docker compose --profile qwen up -d`
-2. Open `https://<host>:3099` (accept the self-signed cert), log in with
-   `QWEN_UI_USER`/`QWEN_UI_PASSWORD`.
-3. In the desktop's Chromium (already open on the ModelStudio console),
-   log into `modelstudio.console.alibabacloud.com` once.
-4. Done — the collector grabs the session cookies over CDP every cycle and
-   the open console tab keeps the session alive. If you skip this, the Qwen
-   card still works via the token-plan API key (availability only, amber
-   "key mode" chip).
+Percentages come from `bailian-cli` on an Alibaba Cloud AccessKey:
+
+1. In the Alibaba Cloud RAM console, create an AccessKey (the token-plan is
+   personal — the key must be the **main account's**, a RAM user is refused
+   with `Team.NotAuthorised`; accepted risk, see DECISIONS.md).
+2. On the stack host: `bash collector/qwen-openapi-setup.sh` — it prompts for
+   the AccessKey ID/secret, stores them in `data/bailian/config.json`, and
+   probes the usage API. Expect `per5Hour`/`per1Week` fields back.
+3. Done — the collector reads percentages every cycle; `bailian-cli`
+   self-refreshes its console token from the key. Never expiring, never a
+   login.
+
+If the CLI source fails, the card falls back to the legacy `qwen-browser`
+CDP grab / cookie, then the token-plan API key (availability only, amber
+"key mode" chip). The `qwen` profile exists as an off-by-default fallback:
+`docker compose --profile qwen up -d` revives the remote desktop at
+`https://<host>:3099`.
 
 ## 4. Telegram alerts
 
@@ -102,9 +110,9 @@ anything that did not report. A missing card means it was skipped, not lost.
 | "Awaiting first sync" | no usable credential at all | §3 logins |
 | Card says `not connected` + hint text | provider skipped: no credential | do that provider's login |
 | Claude card dead, hint says re-login | **check the log first** — the classic false alarm is the quota CLI not finding `claude`; the collector image ships it, so if you run the collector outside Docker make sure `claude` is on PATH | log line `skipped.anthropic` tells the truth |
-| Qwen card amber `key mode` chip | console session in `qwen-browser` expired | re-login at `https://<host>:3099` (§3) |
-| Qwen percentages still missing 10 min after login | grab failed to verify | `curl http://127.0.0.1:9333/json/version` on the host (CDP up?) then check `data/qwen-browser/chrome-launch.log` |
-| Qwen desktop URL not loading | `QWEN_UI_BIND` still loopback-only (fresh-install default) | set your LAN IP in `.env`, `docker compose --profile qwen up -d` |
+| Qwen card amber `key mode` chip | `bailian-cli` source failed (rejected/expired AccessKey, network) | `docker compose logs collector`, then re-run `collector/qwen-openapi-setup.sh` |
+| Qwen percentages still missing 10 min after setup | CLI probe failed | run `docker compose exec collector bl usage token-plan --output json` and check `data/bailian/config.json` exists |
+| Qwen legacy desktop URL not loading | `QWEN_UI_BIND` loopback-only or stack stopped | legacy fallback only: set LAN IP in `.env`, `docker compose --profile qwen up -d` |
 | Collector log shows `CDP HTTP 500` / `Host heade...` | Host-header regression in `cdp-cookies.mjs` (Chromium DevTools validates it; must use `node:http`+`ws`, not fetch) | don't refactor those calls back to fetch |
 | `docker compose up` errors about `CREDENTIALS_ROOT` | env var unset | set it in `.env` |
 | Collector log shows `HTTP 401` on ingest | `INGEST_KEY` mismatch between server `.env` and collector | same value both sides |
@@ -118,17 +126,22 @@ curl -s http://127.0.0.1:8099/api/quota | head -c 300
 docker ps --format '{{.Names}} {{.Status}}'     # all four containers Up
 ```
 
-### The Qwen browser stack (deep dive)
+### The Qwen browser stack (legacy fallback deep dive)
+
+Retired 2026-09-14 (percentages now come from `bailian-cli` + AccessKey).
+Kept for revival only — the watchdog cron is gone, so if you re-enable the
+`qwen` profile you also need its self-healing back:
 
 - Inside `qwen-browser`, a supervisor (`data/qwen-browser/.config/labwc/
   autostart`, repo copy `collector/qwen-labwc-autostart.sh`) relaunches
   Chromium whenever it dies and kills wedged instances (CDP dead 60 s).
   Chromium always opens directly on the ModelStudio console — **that tab is
   the session's keepalive**; don't close it.
-- A host-side watchdog (`*/2` cron running `collector/qwen-watchdog.sh`)
-  force-recreates the containers if CDP on :9333 stays dead. Prefer
-  `docker compose up -d --force-recreate qwen-browser cdp-relay` after manual
-  intervention; plain `docker restart` can wedge headful autostart.
+- The host-side watchdog cron (`*/2` running `collector/qwen-watchdog.sh`)
+  was removed 2026-09-14; re-add it if the browser path becomes primary
+  again. Prefer `docker compose up -d --force-recreate qwen-browser
+  cdp-relay` after manual intervention; plain `docker restart` can wedge
+  headful autostart.
 - CDP (DevTools) is a remote-control channel for the whole logged-in
   profile — it is published **loopback-only** on the host by design. Never
   rebind it to a LAN interface.

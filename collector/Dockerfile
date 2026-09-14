@@ -9,6 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 # quota_supported:false even with valid credentials (verified 2026-08-30).
 RUN npm install -g @anthropic-ai/claude-code
 
+# bailian-cli: token-plan usage API (Qwen percentages) on the main-account
+# AccessKey stored at /data/bailian (BAILIAN_CONFIG_DIR). --ignore-scripts
+# skips the skill installer — not needed here.
+RUN npm install -g bailian-cli --ignore-scripts
+
 WORKDIR /collector
 
 # Dependencies first (layer cache): opencode-quota CLI + the patched status cap.

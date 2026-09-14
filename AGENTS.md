@@ -32,7 +32,7 @@ the usage data actually flowing — with evidence, not assumptions.
 | Stack root | — | `/home/dave/stacks/ai-usage-dashboard` |
 | Collector (code + own Dockerfile) | `collector/*` | built into image `aiud-collector` |
 | Server | `server.js`, `Dockerfile`, `public/` | image `ai-usage-dashboard`, port 8099 |
-| Runtime data/secrets | gitignored | `<stack>/data/` (`settings.json`, `latest.json`, `history.jsonl`, `collector-state.json`, qwen-browser profile) |
+| Runtime data/secrets | gitignored | `<stack>/data/` (`settings.json`, `bailian/config.json` (Qwen AK), `latest.json`, `history.jsonl`, `collector-state.json`, legacy qwen-browser profile) |
 | Host credentials (mounted, not copied) | — | `~/.claude`, `~/.config/opencode`, `~/.cache/opencode`, `~/.local/share/opencode` |
 
 ## 4. Deploy & Verify Protocol
@@ -73,9 +73,10 @@ collect every 10 min, Alibaba keepalive every 2 h, aligned to wall-clock
 boundaries with a +5 s guard, single-flight (one process owns all spawning —
 the old flock rule by construction). Container tz via `TZ` env. There is
 deliberately **no agent-driven browser automation from this repo** — no MCP
-browser routes feed the collectors; the only browser in the stack is the
-dedicated `qwen-browser` container holding the Qwen login (§6). The
-qwen-watchdog */2 host cron remains as a backstop only.
+browser routes feed the collectors. Qwen percentages come from `bailian-cli`
+on the main-account AccessKey (§6); the `qwen-browser` container is a retired,
+off-by-default fallback (profile `qwen`), and the old `*/2 qwen-watchdog`
+host cron was removed 2026-09-14.
 
 ## 6. Common Mistakes To Avoid
 
@@ -87,16 +88,17 @@ qwen-watchdog */2 host cron remains as a backstop only.
 - **Trust HTTP 200 from Alibaba pages** as session-alive proof. Only the real
   usage-API call (`verifyAliCookie`) counts.
 - **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
-  (2026-08-26): percentages auto-grab from the `qwen-browser` container's live
-  profile over CDP. When the Qwen card shows the amber "key mode" chip: the
-  console session died — open `https://192.168.1.143:3099` (LAN; creds in stack `.env`; self-signed
-  cert warning is expected) or `https://100.65.57.85:3099` (tailnet) and log
-  in again. The browser
-  self-heals (in-container supervisor + */2 watchdog cron recreate); only dig
-  into khpi5 if the desktop itself never loads. The supervisor launches
-  Chromium directly onto the Bailian console URL — that open tab is the
-  session's keepalive (2026-08-28 expiry: browser sat on a blank tab for
-  ~34 h after a relaunch).
+  (2026-09-14): percentages come from `bailian-cli` (`bl usage token-plan`)
+  authenticated with the **main-account AccessKey** stored at
+  `data/bailian/config.json` (setup: `collector/qwen-openapi-setup.sh`; the CLI
+  self-refreshes its console token — personal plans refuse RAM sub-users with
+  `BailianGateway.Team.NotAuthorised`, see DECISIONS.md). The `qwen-browser`
+  CDP/cookie path and token-plan key probe remain only as fallback layers. When
+  the Qwen card shows the amber "key mode" chip, the CLI source failed —
+  check `docker compose logs collector`, then re-run the setup script. The
+  legacy browser fallback (if deliberately re-enabled via the `qwen` profile)
+  logs in at `https://192.168.1.143:3099` (LAN; creds in stack `.env`) or
+  `https://100.65.57.85:3099` (tailnet).
 - **Start a second collector** for testing without `flock -n` on the same lock
   (host-cron era rule; with the containerized runner, simply never run a
   second collector container against the same ingest).
@@ -113,9 +115,9 @@ qwen-watchdog */2 host cron remains as a backstop only.
 Full table with renewal paths in DECISIONS.md. One-liners:
 Claude/ChatGPT = OAuth auto-refresh (`claude-token.mjs` / `chatgpt-token.mjs`);
 Antigravity =
-opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = live login held
-in the `qwen-browser` container, auto-grabbed over CDP, with token-plan key
-fallback. Telegram
+opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = live percentages
+via `bailian-cli` on the main-account AccessKey (self-refreshing console
+token; CDP/cookie/key fallbacks). Telegram
 bot "AI Usage Manager": staged allowance alerts only, dedupe in the collector
 state file (`data/collector-state.json`),
 config only in khpi5 `data/settings.json`.

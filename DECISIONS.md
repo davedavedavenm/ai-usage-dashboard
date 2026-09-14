@@ -166,6 +166,48 @@ reading only from that single live profile. `alijar.mjs`,
 `refresh-ali-cookie.mjs`, `refresh-and-export.sh`, `keepalive-and-collect.sh`
 and `tg-notify.mjs` remain deleted; git history retains them.
 
+## Qwen percentages come from bailian-cli on the main-account AccessKey — Active (2026-09-14)
+
+The console-session browser pipeline above could not be kept alive beyond
+~1-2 weeks, and the card silently degraded to key mode for days (found
+2026-09-14: session dead since ~Sep 8; both cookie sources answered
+`BailianGateway.Login.NotLogined`). The replacement: the official
+`bailian-cli` carries the same personal token-plan usage API the dashboard
+already used (`zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage`) and
+authenticates via a Bearer console token it **self-refreshes from an
+Alibaba Cloud AccessKey** (`GenerateCLIAccessToken`, auto-retry after a
+`not logged in` response). No browser session, no periodic login.
+
+Settled details (all verified 2026-09-14):
+
+- **The plan is personal; only the main-account identity can read it.** A RAM
+  sub-user authenticates fine (AK token generation OK) but the gateway refuses
+  with `BailianGateway.Team.NotAuthorised`, and the personal-plan console has
+  no member management to fix that. `AliyunBailianFullAccess` (covers
+  `modelstudio` all-actions) does **not** change it — it is a membership
+  check, not a policy check. Hence the **main-account (root) AccessKey**
+  stored at `data/bailian/config.json` (gitignored, 0600, same handling as
+  settings.json). Accepted risk, explicitly chosen by Dave; rotate it by
+  deleting/recreating in the RAM console and re-running
+  `collector/qwen-openapi-setup.sh`.
+- Config quirks: `bl config set` rejects `console_site`/`console_region`
+  (file-only fields). The setup script patches the JSON after login:
+  `console_site=international`, `console_region=ap-southeast-1` (same gateway
+  the cookie source used: `bailian-singapore-cs.alibabacloud.com` /
+  `IntlBroadScopeAspnGateway`), `base_url=https://dashscope-intl.aliyuncs.com`
+  (drives the OpenAPI host for token refreshes — without it the refresh hits
+  the CN host and the minted token is refused), `telemetry=false`.
+- Collector source order: (1) `bailian-cli` (`fetchQwenCli`,
+  `BAILIAN_CONFIG_DIR=/data/bailian`) → (2) legacy CDP grab → (3) settings
+  cookie → (4) token-plan key probe. The CLI reports percentages **used** as
+  fractions; the collector converts to `percentRemaining`.
+- **Retired same day**: `qwen-browser` + `cdp-relay` stopped and the
+  `*/2 qwen-watchdog` host cron removed — nothing depends on a live console
+  session any more. The `qwen` compose profile, CDP grab, keepalive and the
+  watchdog script stay in the repo as an off-by-default fallback. The
+  collector's 2-hourly keepalive still logs `SESSION_EXPIRED` against the old
+  cookie (harmless noise) until the browser path is revived.
+
 ## google-agy probe removed — Active (2026-08-30)
 
 The `google-agy` (Antigravity CLI / AI Studio) probe was probed but skipped
@@ -239,7 +281,7 @@ for fresh installs, and khpi5's `.env` pins LAN + tailnet.
 | Gemini/Antigravity | opencode-quota CLI (`google-antigravity`, `googleModels` = plan model windows) | `~/.config/opencode/antigravity-accounts.json` | n/a while account valid (refresh handled inside the plugin's account store; manual re-login via `opencode auth login` → Google (Antigravity) if it ages out) |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
 | OpenCode Go | direct usage API | `auth.json` API key | n/a |
-| Qwen (Alibaba Token Plan) | usage API via live browser profile (CDP grab, verified); token-plan key probe fallback | logged-in session in `qwen-browser` container (mirrored to `data/settings.json`) + `auth.json` key | automatic except periodic remote login — see the Qwen decision above |
+| Qwen (Alibaba Token Plan) | token-plan usage API via `bailian-cli` (real percentages); token-plan key probe fallback | main-account AccessKey at `data/bailian/config.json` (self-refreshing console token) + `auth.json` key | **automatic** — token refresh via the AccessKey; browser path retired 2026-09-14 |
 
 A manual `claude login` / `opencode auth login` is a **fallback**, not part of
 normal operation. If the dashboard suggests logging in again, first check

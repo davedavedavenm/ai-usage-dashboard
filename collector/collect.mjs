@@ -34,6 +34,11 @@ const INGEST_URL = process.env.AIUD_INGEST_URL || "http://127.0.0.1:8099/api/ing
 const ZAI_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const GO_URL = "https://opencode.ai/zen/go/v1/usage";
 const CLI_BIN = process.env.AIUD_CLI_BIN || join(HERE, "node_modules", ".bin", "opencode-quota");
+// bailian-cli carries the token-plan usage API (Qwen percentages) on the
+// main-account AccessKey; its config lives in the stack data dir via
+// BAILIAN_CONFIG_DIR, so the credential never leaves khpi5. Configured by
+// collector/qwen-openapi-setup.sh — see DECISIONS.md.
+const BL_BIN = process.env.AIUD_BL_BIN || "/usr/local/bin/bl";
 // Cron PATH (/usr/bin:/bin) lacks ~/.local/bin and /usr/local/bin, where the claude
 // binary lives — without it opencode-quota reports auth_status=unknown, skips the
 // live quota probe entirely, and the provider vanishes from the dashboard. The CLI
@@ -222,6 +227,43 @@ async function fetchQwen(cookie) {
   }
   if (!entries.length) return { status: "error", error: "Alibaba API error: usage windows empty" };
   return { status: "ok", label: "Qwen", entries, note: "live percentages via console session" };
+}
+
+// Token-plan percentages via bailian-cli. The CLI prints percentages USED as
+// fractions (per5HourPercentage / per1WeekPercentage; the Lite plan exposes
+// weekly only) plus reset times in epoch ms. It authenticates as the main
+// account via the stored AccessKey and self-refreshes its console token, so
+// this source survives console-session expiry — no browser, no manual login.
+function fetchQwenCli() {
+  if (!process.env.BAILIAN_CONFIG_DIR) return { status: "unavailable", error: "bailian-cli not configured" };
+  if (!existsSync(BL_BIN)) return { status: "unavailable", error: "bailian-cli binary not found at " + BL_BIN };
+  let out;
+  try {
+    out = execFileSync(BL_BIN, ["usage", "token-plan", "--output", "json"], {
+      encoding: "utf8",
+      timeout: 60000,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, PATH: CLI_PATH, DO_NOT_TRACK: "1" },
+    });
+  } catch (e) {
+    return { status: "unavailable", error: "bailian-cli: " + String(e.stderr || e.message || e).slice(0, 160) };
+  }
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { return { status: "error", error: "bailian-cli: non-JSON output" }; }
+  if (parsed && parsed.error) {
+    return { status: "unavailable", error: "bailian-cli: " + String(parsed.error.message || parsed.error.code || "error").slice(0, 160) };
+  }
+  const p5 = aliPercent(parsed.per5HourPercentage);
+  const pw = aliPercent(parsed.per1WeekPercentage);
+  const entries = [];
+  if (p5 != null) {
+    entries.push(pctEntry("Last 5 hours", 100 - p5, parsed.per5HourResetTime ? new Date(parsed.per5HourResetTime).toISOString() : undefined, "5h"));
+  }
+  if (pw != null) {
+    entries.push(pctEntry("This week", 100 - pw, parsed.per1WeekResetTime ? new Date(parsed.per1WeekResetTime).toISOString() : undefined, "weekly"));
+  }
+  if (!entries.length) return { status: "error", error: "bailian-cli: no usage windows in output" };
+  return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey" };
 }
 
 function runStatusCli(providerId) {
@@ -550,37 +592,43 @@ async function main() {
     env: envValue(readParentEnv(), "AIUD_QWEN_API_KEY"),
   });
   {
-    // Qwen source order: (1) live logged-in Chromium profile inside the
-    // qwen-browser container, grabbed over CDP and verified against the real
-    // usage API — verified grabs also write back into settings.json so
-    // keepalive stays consistent; (2) the settings/env cookie as before;
-    // (3) token-plan API key fallback. Login happens once, via remote desktop.
-    let qwenCookie = aliCookie || "";
-    {
-      const grabbed = await grabAliCookieFromBrowser();
-      if (grabbed.ok) {
-        const ver = await verifyAliCookie(grabbed.cookie);
-        if (ver.ok) {
-          qwenCookie = grabbed.cookie;
-          const dash = readDashboardSettings();
-          if ((dash.alibabaCookie || "") !== grabbed.cookie) {
-            dash.alibabaCookie = grabbed.cookie;
-            try {
-              writeSettingsAtomic(join(DATA_DIR, "settings.json"), dash);
-            } catch {}
+    // Qwen source order: (1) bailian-cli token-plan usage — main-account
+    // AccessKey, self-refreshing console token, so this is the permanent
+    // source (see DECISIONS.md); (2) live logged-in Chromium profile inside
+    // the qwen-browser container, grabbed over CDP and verified against the
+    // real usage API — verified grabs also write back into settings.json so
+    // keepalive stays consistent; (3) the settings/env cookie as before;
+    // (4) token-plan API key fallback (coarse available/exhausted).
+    let qwenResult = await fetchQwenCli();
+    if (qwenResult.status !== "ok") {
+      let qwenCookie = aliCookie || "";
+      {
+        const grabbed = await grabAliCookieFromBrowser();
+        if (grabbed.ok) {
+          const ver = await verifyAliCookie(grabbed.cookie);
+          if (ver.ok) {
+            qwenCookie = grabbed.cookie;
+            const dash = readDashboardSettings();
+            if ((dash.alibabaCookie || "") !== grabbed.cookie) {
+              dash.alibabaCookie = grabbed.cookie;
+              try {
+                writeSettingsAtomic(join(DATA_DIR, "settings.json"), dash);
+              } catch {}
+            }
           }
         }
       }
-    }
-    // Qwen has two complementary sources: the console session (real percentage
-    // windows) and the token-plan API key (always answers: available /
-    // exhausted+reset). Cookie first for fidelity; key takes over silently
-    // when it is dead/absent.
-    let qwenResult = qwenCookie ? await fetchQwen(qwenCookie) : { status: "unavailable" };
-    if (qwenResult.status !== "ok" && qwenKey) {
-      const keyResult = await fetchQwenTokenPlan(qwenKey);
-      if (keyResult.status === "ok" || !qwenCookie || keyResult.status !== "unavailable") {
-        qwenResult = keyResult;
+      // Qwen has two complementary sources: the console session (real
+      // percentage windows) and the token-plan API key (always answers:
+      // available / exhausted+reset). Cookie first for fidelity; key takes
+      // over silently when it is dead/absent.
+      const cookieResult = qwenCookie ? await fetchQwen(qwenCookie) : { status: "unavailable" };
+      if (cookieResult.status !== "unavailable") qwenResult = cookieResult;
+      if (qwenResult.status !== "ok" && qwenKey) {
+        const keyResult = await fetchQwenTokenPlan(qwenKey);
+        if (keyResult.status === "ok" || !qwenCookie || keyResult.status !== "unavailable") {
+          qwenResult = keyResult;
+        }
       }
     }
     direct["alibaba-coding-plan"] = qwenResult;
