@@ -331,6 +331,17 @@ midpoint stages described above. Only the configured near-exhaustion threshold
 (default 15%) and exhaustion remain. Old provider/window/destination receipts
 are preserved. No retired cookie/session notices are reintroduced.
 
+**Rollover / reset warning alerts (2026-09-17):** To ensure Dave can make
+maximum use of AI subscription allowances before they expire and roll over, the
+collector evaluates the longest allowance window per provider (monthly for
+OpenCode Go; weekly for Claude, OpenAI, Qwen, Z.ai; short 5-hour rolling
+limits such as Google Antigravity models are excluded to prevent false alarms)
+and dispatches Telegram warnings (and configured webhooks) at T-24h and T-12h
+before reset when allowance remains (`percentRemaining > 0`). If 0% remains, no
+warning is sent (already exhausted). Deduplication is keyed by window and
+reset timestamp under `state.rolloverAlerts[id]`, atomic with fsync, and
+tracked independently per destination channel.
+
 Do not create a second bot or hardcode chat ids anywhere.
 
 ## Windows workstation needs nothing installed — Active

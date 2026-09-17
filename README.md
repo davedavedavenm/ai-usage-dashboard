@@ -2,7 +2,8 @@
 
 A self-contained Docker Compose stack showing how much allowance is left on
 each AI subscription — Claude, ChatGPT, Z.ai, OpenCode Go, Gemini/Antigravity,
-Qwen — with Telegram alerts when any window runs low.
+Qwen — with Telegram alerts when any window runs low and rollover warnings
+24h and 12h before billing reset.
 
 Everything runs in containers: the server is a single zero-dependency Node
 file, the collector probes the providers' quota APIs every 10 minutes and
@@ -109,6 +110,13 @@ If the CLI source fails, the collector degrades through the legacy
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red
 glow.
+
+## Alerts
+
+Configured via the Settings tab (Telegram bot token/chat ID and optional webhook URL):
+
+- **Low-allowance warnings**: Staged notifications when the tightest window hits the configured threshold (default 15%) and when it hits 0% (exhausted).
+- **Rollover / reset warnings**: Sent **24 hours** and **12 hours** before each agent's longest allowance window (monthly for OpenCode Go, weekly for Claude, OpenAI, Qwen, Z.ai) resets. Fires only when allowance remains (`> 0%`) so you can make maximum use of quota before rollover. Short 5-hour rolling limits are excluded to prevent spam.
 
 ## API
 

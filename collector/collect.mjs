@@ -390,6 +390,10 @@ function validateAlertState(state) {
       Object.values(windows).forEach(record);
     }
   }
+  if (state.rolloverAlerts !== undefined) {
+    if (!object(state.rolloverAlerts)) throw new Error("invalid rollover alerts");
+    Object.values(state.rolloverAlerts).forEach(record);
+  }
 }
 
 function writeState(state) {
@@ -420,6 +424,7 @@ function readAlertConfig() {
     token: dash.token || envValue(lines, "AIUD_TG_BOT_TOKEN"),
     chatId: dash.chatId || envValue(lines, "AIUD_TG_CHAT_ID"),
     webhookUrl: webhook.url || envValue(lines, "AIUD_WEBHOOK_URL"),
+    rolloverEnabled: dash.rolloverEnabled !== false && envValue(lines, "AIUD_ROLLOVER_ENABLED") !== "false",
   };
 }
 
@@ -435,6 +440,38 @@ function tightestEntry(providers) {
         if (/claude|gpt/i.test(`${e.name} ${e.window}`)) continue;
       }
       if (!best || e.percentRemaining < best.percentRemaining) best = e;
+    }
+    if (best) out.push({ id, label: r.label || id, entry: best });
+  }
+  return out;
+}
+
+function windowDurationHours(entry) {
+  if (!entry) return 0;
+  const win = String(entry.window || "").toLowerCase();
+  const name = String(entry.name || "").toLowerCase();
+  if (win === "monthly" || /month/i.test(name)) return 24 * 30; // 720h
+  if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
+  if (win === "daily" || /day/i.test(name)) return 24;         // 24h
+  return 5; // 5h, rolling, agy-*, etc.
+}
+
+function longestPeriodEntries(providers) {
+  const out = [];
+  for (const [id, r] of Object.entries(providers)) {
+    if (!r || !Array.isArray(r.entries)) continue;
+    let best = null;
+    let bestHours = 0;
+    for (const e of r.entries) {
+      if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      if (!e.resetAt) continue;
+      const dur = windowDurationHours(e);
+      // Exclude short/rolling windows (< 24h) from rollover alerts
+      if (dur < 24) continue;
+      if (dur > bestHours) {
+        best = e;
+        bestHours = dur;
+      }
     }
     if (best) out.push({ id, label: r.label || id, entry: best });
   }
@@ -459,6 +496,17 @@ function buildAlertText(stage, info) {
   const emoji = out ? "🚨" : stage.emoji;
   const headline = out ? "is out of allowance" : stage.headline;
   const pctText = out ? "Nothing left" : `<b>${pct}%</b> left`;
+  const resetText = entry.resetAt
+    ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+    : "";
+  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}\n${esc(DASHBOARD_URL)}`;
+}
+
+function buildRolloverAlertText(stageHours, info) {
+  const { label, entry, pct } = info;
+  const emoji = stageHours <= 12 ? "⚠️" : "⏳";
+  const headline = `resets in ~${stageHours} hours`;
+  const pctText = `<b>${pct}%</b> allowance remaining before rollover`;
   const resetText = entry.resetAt
     ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
@@ -503,7 +551,77 @@ async function sendWebhook(url, payload) {
   }
 }
 
-async function runAlerts(providers, state, cfg) {
+async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
+  if (!cfg.enabled || (!cfg.token && !cfg.webhookUrl) || cfg.rolloverEnabled === false) return;
+  const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
+  const winKeyOf = (e) => `${e.window || ""}|${e.resetAt || ""}`;
+
+  for (const { id, label, entry } of longestPeriodEntries(providers)) {
+    const pct = entry.percentRemaining;
+    if (pct <= 0) continue;
+
+    const resetMs = new Date(norm(entry.resetAt)).getTime();
+    if (!Number.isFinite(resetMs) || isNaN(resetMs)) continue;
+    const hoursUntilReset = (resetMs - now) / (3600 * 1000);
+
+    let stage = null;
+    if (hoursUntilReset <= 12 && hoursUntilReset > 0) {
+      stage = 12;
+    } else if (hoursUntilReset <= 24 && hoursUntilReset > 12) {
+      stage = 24;
+    }
+    if (!stage) continue;
+
+    const winKey = winKeyOf(entry);
+    const prev = state.rolloverAlerts?.[id];
+    let sent = {};
+    if (prev && prev.winKey) {
+      const pk = prev.winKey.split("|");
+      const ck = winKey.split("|");
+      const sameReset = (!pk[1] && !ck[1]) || (pk[1] && ck[1] &&
+        Math.abs(new Date(norm(pk[1])).getTime() - new Date(norm(ck[1])).getTime()) < 2 * 3600 * 1000);
+      if (pk[0] === ck[0] && sameReset) {
+        sent = (prev.stages && typeof prev.stages === "object") ? prev.stages : {};
+      }
+    }
+
+    const delivered = channel => {
+      if (stage === 24) {
+        return Boolean(sent[24]?.[channel] || sent[12]?.[channel]);
+      }
+      return Boolean(sent[12]?.[channel]);
+    };
+
+    const saveReceipt = channel => {
+      const current = sent[stage];
+      sent[stage] = { ...(current && typeof current === "object" ? current : {}), [channel]: new Date().toISOString() };
+      state.rolloverAlerts = state.rolloverAlerts || {};
+      state.rolloverAlerts[id] = { winKey, stages: sent };
+      writeState(state);
+    };
+
+    if (cfg.token && cfg.chatId && !delivered("telegram")) {
+      const result = await sendTelegram(cfg, buildRolloverAlertText(stage, { label, entry, pct }));
+      if (result.ok) saveReceipt("telegram");
+      else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", alertType: "rollover", status: result.status }));
+    }
+    if (cfg.webhookUrl && !delivered("webhook")) {
+      const result = await sendWebhook(cfg.webhookUrl, {
+        event: "rollover_alert",
+        provider: id,
+        label,
+        entry: { name: entry.name, window: entry.window, percentRemaining: pct, resetAt: entry.resetAt },
+        hoursBeforeReset: stage,
+        dashboardUrl: DASHBOARD_URL,
+        timestamp: new Date().toISOString(),
+      });
+      if (result.ok) saveReceipt("webhook");
+      else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "webhook", alertType: "rollover", status: result.status }));
+    }
+  }
+}
+
+async function runAlerts(providers, state, cfg, now = Date.now()) {
   if (!cfg.enabled || (!cfg.token && !cfg.webhookUrl)) {
     console.log(JSON.stringify({ at: new Date().toISOString(), alerts: "disabled" }));
     return;
@@ -575,6 +693,7 @@ async function runAlerts(providers, state, cfg) {
       else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "webhook", status: result.status }));
     }
   }
+  await runRolloverAlerts(providers, state, cfg, now);
 }
 
 async function main() {
