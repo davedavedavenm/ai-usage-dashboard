@@ -104,6 +104,7 @@
   }
   .card.dead { filter: saturate(.25) brightness(.75); }
   .card.err { --accent: var(--red); }
+  .card.wide { grid-column: 1 / -1; }
 
   .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .pname { font-size: 25px; font-weight: 700; letter-spacing: .04em; }
@@ -136,6 +137,7 @@
   .hreset2 { font-family: var(--font-mono); font-size: 17px; color: var(--ink-dim); margin-top: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .hreset2 b { color: var(--ink); font-weight: 600; }
   .minis { margin-top: 16px; border-top: 1px dashed #222835; padding-top: 13px; display: grid; gap: 11px; }
+  .minis.two { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, auto); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); column-gap: 40px; }
   .mini { display: grid; grid-template-columns: auto 1fr 60px auto; gap: 10px 14px; align-items: center; }
   .mini .mtag { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; color: var(--ink-dim); white-space: nowrap; text-transform: uppercase; }
   .mini .mmeter { height: 7px; background: #1b202a; border-radius: 4px; overflow: hidden; }
@@ -233,6 +235,7 @@
     .bighero { flex-direction: column; align-items: flex-start; gap: 8px; }
     .bignum { font-size: clamp(48px, 14vw, 84px); }
     .mini { grid-template-columns: 80px 1fr 48px auto; gap: 6px 8px; }
+    .minis.two { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; }
     .syncline { font-size: 13px; gap: 6px; padding: 8px 0 16px; }
     .pname { font-size: 22px; }
     .card { padding: 18px 16px 14px; }
@@ -376,7 +379,7 @@ const META = {
   copilot:              { name: "Copilot",           sub: "GitHub",                accent: "#94a3b8" },
   xai:                  { name: "xAI",               sub: "SuperGrok",             accent: "#f472b6" },
 };
-const PRIMARY = ["anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan", "radeon-cloud"];
+const PRIMARY = ["radeon-cloud", "anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan"];
 const FALLBACK = { name: "—", sub: "", accent: "#77808f" };
 let state = null;
 
@@ -494,7 +497,7 @@ function cardHTML(id, prov) {
       }
     }
     if (loads.length) {
-      body += `<div class="minis">${loads.map(e => {
+      body += `<div class="minis two">${loads.map(e => {
         const u = Math.max(0, Math.min(100, e.utilization));
         const lcls = "load" + (e.state === "full" ? " crit" : e.state === "busy" ? " low" : "");
         return `<div class="mini" title="${esc(e.name)} · ${esc(e.label)}">
@@ -531,7 +534,8 @@ function cardHTML(id, prov) {
     }
   }
   const stateCls = bindingPct == null ? "" : ` state-${pctClass(bindingPct) || "ok"}`;
-  return `<section class="card ${cls}${stateCls}" style="--accent:${meta.accent}">
+  const wideCls = id === "radeon-cloud" ? " wide" : "";
+  return `<section class="card ${cls}${stateCls}${wideCls}" style="--accent:${meta.accent}">
     <div class="card-head">
       <div><div class="pname">${esc(meta.name)}</div><div class="psub">${esc(meta.sub)}</div></div>
       ${stateChip}
