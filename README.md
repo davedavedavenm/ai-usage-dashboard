@@ -106,6 +106,7 @@ If the CLI source fails, the collector degrades through the legacy
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Pro, G3Flash, …) | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (via `bailian-cli`) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
+| Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red

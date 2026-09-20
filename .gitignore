@@ -4,3 +4,4 @@ data/
 collector/state.json
 collector/node_modules/
 node_modules/
+.openchamber/

@@ -140,6 +140,7 @@
   .mini .mtag { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; color: var(--ink-dim); white-space: nowrap; text-transform: uppercase; }
   .mini .mmeter { height: 7px; background: #1b202a; border-radius: 4px; overflow: hidden; }
   .mini .mmeter i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .mini .mmeter.load i { background: var(--green); }
   .mini .mmeter.low i { background: var(--amber); }
   .mini .mmeter.crit i { background: var(--red); }
   .mini .mpct { font-family: var(--font-mono); font-size: 16px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -370,11 +371,12 @@ const META = {
   "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
   "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Percentages come from a logged-in session in the <code>qwen-browser</code> container on khpi5, which the collector auto-grabs — no pasting. To log in or re-login open <code>https://192.168.1.143:3099</code> (LAN) or <code>https://100.65.57.85:3099</code> (tailnet; creds in stack .env; accept the self-signed cert warning) and sign into <code>modelstudio.console.alibabacloud.com</code>. Percentages reappear within 10 minutes." },
   "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },
+  "radeon-cloud":       { name: "Radeon Cloud",      sub: "AMD Token Factory · fleet load", accent: "#ed1c24", hint: "Public fleet-load feed (no auth). If this card errors, check khpi5 egress to <code>developer.amd.com.cn</code>." },
   openrouter:           { name: "OpenRouter",        sub: "credits",               accent: "#8b93a7" },
   copilot:              { name: "Copilot",           sub: "GitHub",                accent: "#94a3b8" },
   xai:                  { name: "xAI",               sub: "SuperGrok",             accent: "#f472b6" },
 };
-const PRIMARY = ["anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan"];
+const PRIMARY = ["anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan", "radeon-cloud"];
 const FALLBACK = { name: "—", sub: "", accent: "#77808f" };
 let state = null;
 
@@ -459,7 +461,8 @@ function cardHTML(id, prov) {
   if (alive) {
     const entries = (prov.entries || []);
     const percents = entries.filter(e => e.renderType === "percent" && e.percentRemaining != null).sort(sortWindows);
-    const values = entries.filter(e => e.renderType !== "percent" || e.percentRemaining == null);
+    const loads = entries.filter(e => e.renderType === "load" && typeof e.utilization === "number");
+    const values = entries.filter(e => e.renderType !== "load" && (e.renderType !== "percent" || e.percentRemaining == null));
     if (percents.length) {
       let hero = null;
       if (id === "google-antigravity") {
@@ -489,6 +492,18 @@ function cardHTML(id, prov) {
           </div>`;
         }).join("")}</div>`;
       }
+    }
+    if (loads.length) {
+      body += `<div class="minis">${loads.map(e => {
+        const u = Math.max(0, Math.min(100, e.utilization));
+        const lcls = "load" + (e.state === "full" ? " crit" : e.state === "busy" ? " low" : "");
+        return `<div class="mini" title="${esc(e.name)} · ${esc(e.label)}">
+          <span class="mtag">${esc(e.name)}</span>
+          <span class="mmeter ${lcls}"><i style="width:${u}%"></i></span>
+          <span class="mpct">${Math.round(u)}%</span>
+          <span class="mreset">${esc(e.label)}</span>
+        </div>`;
+      }).join("")}</div>`;
     }
     if (values.length) {
       body += values.map(e => {

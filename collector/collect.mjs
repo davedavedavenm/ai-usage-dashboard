@@ -33,6 +33,7 @@ const AUTH_FILE = process.env.AIUD_AUTH_FILE || join(homedir(), ".local", "share
 const INGEST_URL = process.env.AIUD_INGEST_URL || "http://127.0.0.1:8099/api/ingest";
 const ZAI_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 const GO_URL = "https://opencode.ai/zen/go/v1/usage";
+const RADEON_LOAD_URL = process.env.AIUD_RADEON_LOAD_URL || "https://developer.amd.com.cn/radeon/api/tokenfactory/load";
 const CLI_BIN = process.env.AIUD_CLI_BIN || join(HERE, "node_modules", ".bin", "opencode-quota");
 // bailian-cli carries the token-plan usage API (Qwen percentages) on the
 // main-account AccessKey; its config lives in the stack data dir via
@@ -91,9 +92,9 @@ function apiKey(auth, id) {
   return null;
 }
 
-async function getJson(url, headers, okStatus) {
+async function getJson(url, headers, okStatus, timeoutMs) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs || REQ_TIMEOUT_MS);
   try {
     const res = await fetch(url, { headers, signal: ctrl.signal });
     const text = await res.text();
@@ -169,6 +170,28 @@ async function fetchOpenCodeGo(auth) {
   if (entries.length && errors.length) return { status: "partial", label: "OpenCode Go", entries, error: "OpenCode Go API error: " + errors.join("; ") };
   if (!entries.length && errors.length) return { status: "error", error: "OpenCode Go API error: " + errors.join("; ") };
   return { status: "ok", label: "OpenCode Go", entries };
+}
+
+async function fetchRadeonLoad() {
+  const result = await getJson(RADEON_LOAD_URL, undefined, undefined, 45000);
+  if (result.error) return { status: "error", error: "Radeon Cloud load API error " + result.error };
+  const models = result.body && result.body.models;
+  if (!models || typeof models !== "object") return { status: "error", error: "Radeon Cloud load API error: no models in response" };
+  const entries = [];
+  for (const [id, m] of Object.entries(models)) {
+    const u = Number(m && m.utilization);
+    if (!Number.isFinite(u)) continue;
+    entries.push({
+      name: id,
+      renderType: "load",
+      state: String((m && m.state) || ""),
+      label: String((m && m.label) || ""),
+      utilization: Math.round(u * 10) / 10,
+    });
+  }
+  if (!entries.length) return { status: "error", error: "Radeon Cloud load API error: no usable model loads" };
+  entries.sort((a, b) => b.utilization - a.utilization);
+  return { status: "ok", label: "Radeon Cloud", entries, note: "fleet load (utilization %) · public Token Factory feed" };
 }
 
 function aliFindContaining(value, keys) {
@@ -701,7 +724,8 @@ async function main() {
   const state = readState();
   const providers = {};
   const skipped = {};
-  const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(auth) };
+  const radeonLoad = fetchRadeonLoad();
+  const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(auth), "radeon-cloud": await radeonLoad };
   const dashSettings = readDashboardSettings();
   const aliCookie = (typeof dashSettings.alibabaCookie === "string" && dashSettings.alibabaCookie) ||
     envValue(readParentEnv(), "AIUD_ALIBABA_COOKIE").replace(/^["']|["']$/g, "");

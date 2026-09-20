@@ -427,6 +427,21 @@ on 2026-09-08; only near-exhaustion and exhaustion remain)
 configured webhook URL (`AIUD_WEBHOOK_URL` or via Settings), allowing direct
 integration with Home Assistant automations or TRMNL sidecars.
 
+## Radeon Cloud card shows fleet load, not allowance - Active (2026-09-20)
+
+The AMD Radeon Cloud Token Factory renders its per-model capacity bars from
+`GET https://developer.amd.com.cn/radeon/api/tokenfactory/load`, which answers
+anonymously (verified 2026-09-20 from khpi5: HTTP 200, no cookie or key — the
+page itself polls it every 20 s). The collector calls it once per run and
+emits one `renderType: "load"` entry per model (`state` idle/busy/full,
+`label`, `utilization`). Load is display-only: alerts, history sparklines and
+the usable/next-reset chips all filter on `renderType: "percent"`, so fleet
+congestion never pages anyone and never counts as allowance. A documented
+per-key quota endpoint (`GET /api/profile/model-usage` on
+`radeon-global.anruicloud.com`, daily USD window + reset) exists if a personal
+Radeon allowance card is ever wanted; it needs an `rc-` API key and is
+deliberately not wired today.
+
 ---
 
 Related: `README.md` (architecture, API, login flows) · infra repo
