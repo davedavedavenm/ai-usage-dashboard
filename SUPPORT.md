@@ -117,6 +117,8 @@ anything that did not report. A missing card means it was skipped, not lost.
 | `docker compose up` errors about `CREDENTIALS_ROOT` | env var unset | set it in `.env` |
 | Collector log shows `HTTP 401` on ingest | `INGEST_KEY` mismatch between server `.env` and collector | same value both sides |
 | Gemini card shows only some models | the quota CLI reports one window per model configured in `~/.config/opencode/opencode-quota/quota-toast.json` (`googleModels`) | add/remove model ids there (valid: G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS) |
+| Gemini card errors with "Google meters no allowance for this Antigravity account" | the logged-in Antigravity account is unmetered (`free-tier`), so Google publishes no windows — the old card showed a fake 100% on every model instead | log in as the account that holds the Google AI plan: `docker compose exec collector …`/`opencode auth login` → Google (Antigravity); see DECISIONS.md 2026-09-21 |
+| Z.ai card `no usable windows` | Z.ai renamed its limit rows (credit plans answer `CREDIT_LIMIT`); the parser maps on `unit` (3 = 5 h, 6 = weekly) so this means a *new* shape | `docker compose exec collector node -e '…'` against `api.z.ai/api/monitor/usage/quota/limit` and extend `zaiLimitWindow()` in `collector/quota-parsers.mjs` (tests: `node --test collector/quota-parsers.test.mjs`) |
 
 ### Health checks (host-side)
 

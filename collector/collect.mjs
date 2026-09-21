@@ -9,6 +9,8 @@ import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, isConstantAntigravityReport } from "./quota-parsers.mjs";
+import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Stack data dir (settings.json, and plain-node state.json fallback). The
@@ -54,7 +56,6 @@ const DASHBOARD_URL = process.env.AIUD_DASHBOARD_URL || envValue(readParentEnv()
 const COLLECTOR_NAME = process.env.AIUD_COLLECTOR_NAME || envValue(readParentEnv(), "AIUD_COLLECTOR_NAME") || "collector";
 const REQ_TIMEOUT_MS = 20000;
 
-const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "Tools (MCP)" };
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
 // google-antigravity covers the whole Google AI plan (Gemini + Claude model
 // windows) with the existing Antigravity OAuth login; google-gemini-cli and
@@ -127,21 +128,32 @@ async function fetchZai(auth) {
   const limits = result.body?.data?.limits ?? result.body?.limits;
   if (!Array.isArray(limits) || !limits.length) return { status: "error", error: "Z.ai API error: no limits in response" };
   const entries = [];
+  const unmapped = [];
   for (const limit of limits) {
-    if (typeof limit.percentage !== "number") continue;
-    let win = null;
-    if (limit.type === "TOKENS_LIMIT" && limit.unit === 3) win = "fiveHour";
-    else if (limit.type === "TOKENS_LIMIT" && limit.unit === 6) win = "weekly";
-    else if (limit.type === "TIME_LIMIT") win = "mcp";
-    if (!win) continue;
+    const win = zaiLimitWindow(limit);
+    if (!win) {
+      unmapped.push(`${limit?.type ?? "?"}/${limit?.unit ?? "?"}`);
+      continue;
+    }
+    const percentRemaining = zaiRemainingPercent(limit);
+    if (percentRemaining == null) {
+      unmapped.push(`${limit?.type ?? "?"}/${limit?.unit ?? "?"} (no percentage)`);
+      continue;
+    }
     const resetIso = limit.nextResetTime ? new Date(Math.round(limit.nextResetTime)).toISOString() : undefined;
-    entries.push(pctEntry(ZAI_WINDOW_NAMES[win], 100 - limit.percentage, resetIso, win));
+    entries.push(pctEntry(ZAI_WINDOW_NAMES[win], percentRemaining, resetIso, win));
   }
-  if (!entries.length) return { status: "error", error: "Z.ai API error: no usable windows" };
+  // The plan renamed its limit rows once already and dropped the MCP window with
+  // it, so any window we can read is a live card: name what the account does not
+  // expose in the note instead of downgrading the whole provider.
+  if (!entries.length) {
+    return { status: "error", error: "Z.ai API error: no usable windows (saw " + (unmapped.join(", ") || "no limit rows") + ")" };
+  }
   const planRow = typeof result.body?.data?.level === "string"
     ? [{ name: "Plan level", renderType: "value", value: result.body.data.level }]
     : [];
-  return { status: entries.length >= 3 ? "ok" : "partial", label: "Z.ai", entries: [...planRow, ...entries] };
+  const missing = unmapped.length ? " · unmapped limit rows: " + unmapped.join(", ") : "";
+  return { status: "ok", label: "Z.ai", entries: [...planRow, ...entries], note: "windows: " + entries.map(e => e.name).join(", ") + missing };
 }
 
 async function fetchOpenCodeGo(auth) {
@@ -808,6 +820,13 @@ async function main() {
     const r = fetchFromStatus(id, sec);
     if (r.status === "unavailable") {
       skipped[id] = "no usable entries in CLI output";
+      continue;
+    }
+    if (id === "google-antigravity" && isConstantAntigravityReport(r.entries)) {
+      // Google's buckets are a constant "full" for accounts it does not meter, so
+      // publish the plan fact instead of a 100% allowance that can never move and
+      // would otherwise drive the header figure, sparkline and alerts off noise.
+      providers[id] = { status: "error", label: id, error: antigravityPlaceholderMessage(await probeGooglePlan()) };
       continue;
     }
     providers[id] = r;

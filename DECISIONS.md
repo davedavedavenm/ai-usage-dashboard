@@ -243,6 +243,56 @@ Gotcha that sparked this: the antigravity card used to show only the Claude
 window because `googleModels` defaulted to `["CLAUDE"]` — looked like "no
 Gemini data" when it was really "no Gemini models requested".
 
+## Google's constant 100% is an unmetered-account placeholder — Active (2026-09-21)
+
+The Gemini card read 100% on every model, every cycle, forever (500 consecutive
+samples 2026-09-18→21, and the one non-100% blip was a server-stamped rate-limit
+reset). That is not a working allowance: Google's quota buckets
+(`quotaInfo.remainingFraction`, reached through the CLI's `google-antigravity`
+probe) return a constant `1` for accounts it does not meter, and stamp **all 27
+models** with the same `resetTime` = request time + 5 h. Proof on this host:
+`v1internal:fetchAvailableModels` and `v1internal:retrieveUserQuota` both return
+`remainingFraction: 1` for every bucket, and `v1internal:loadCodeAssist` answers
+`currentTier.id: "free-tier"` with a "Upgrade to get 1,500 model requests per day
+… with Google AI Pro" offer — the Antigravity credential on khpi5
+(`thedavidmagnus@gmail.com`, project `rising-fact-…`) is not on a paid plan, so
+Google publishes no windows for it. The 2026-08-30 premise above ("Dave has a
+Gemini AI subscription") therefore holds for the *person*, not for *this
+account*: a plan on another Google account is invisible to this credential.
+
+**Decision: the collector never publishes a report matching that signature.**
+`isConstantAntigravityReport()` (`collector/quota-parsers.mjs`) requires the
+whole placeholder pattern — every window exactly 100%, one shared reset, reset
+inside the rolling 5-hour band — and `main()` then publishes an explicit provider
+error naming the plan instead (`collector/google-plan.mjs` refreshes the account
+token with the plugin companion's public OAuth client and reads
+`loadCodeAssist`; nothing secret is written or logged, and any probe failure
+falls back to the generic wording). The placeholder rows are dropped rather than
+shown, so the header figure, sparkline and allowance alerts stop being driven by
+noise; a real window — or a genuine 0%/server-reset rate-limit event — never
+matches the pattern and the card resumes normal reporting by itself.
+
+- Do not "fix" the card by inventing numbers from local request counts: the
+  limits are unknowable on an unmetered account, and the rule above §6 (no
+  fabricated percentages) still applies.
+- Real numbers return when the Antigravity login is the account holding the plan
+  (`opencode auth login` → Google (Antigravity) on khpi5). Re-check the tier with
+  the probe, not by looking at the card.
+
+## Z.ai limit rows are keyed by `unit`, not by the `type` name — Active (2026-09-21)
+
+The Z.ai card went to `Z.ai API error: no usable windows` because the API now
+answers `{"type":"CREDIT_LIMIT","unit":3,…}` / `unit: 6` on the credit plans and
+the parser matched `type === "TOKENS_LIMIT"` literally. Rows are keyed by `unit`
+(3 = rolling 5 hours, 6 = weekly; `TIME_LIMIT` = MCP tools), so
+`zaiLimitWindow()` maps on the unit and accepts any `*_LIMIT` type: a further
+plan rename cannot blank the card again. Live shape also dropped the MCP row
+(`level: "lite"` publishes 5 h + weekly only), so any readable window is a live
+`ok` card — the note names the windows actually present instead of downgrading
+the provider to `partial`. `zaiRemainingPercent()` prefers the exact
+`remaining`/`usage` numbers over `percentage`, which is the share **used** floored
+to a whole percent (live row: 1960/2000 = 98% left while `percentage` says "1").
+
 ## CDP over the compose network needs a Host:localhost override — Active (2026-08-30)
 
 Chromium's DevTools endpoints (HTTP and WebSocket) reject requests whose

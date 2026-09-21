@@ -87,6 +87,13 @@ host cron was removed 2026-09-14.
   lives in `runStatusCli()`, don't remove it).
 - **Trust HTTP 200 from Alibaba pages** as session-alive proof. Only the real
   usage-API call (`verifyAliCookie`) counts.
+- **Read a "100% on every model" Gemini card as a full allowance.** Google stamps
+  a constant full bucket (every model, one shared rolling 5 h reset) for accounts
+  it does not meter; the collector refuses to publish that pattern and names the
+  account's plan instead (DECISIONS.md 2026-09-21). The fix is an Antigravity
+  login on the account holding the Google AI plan — never invented percentages.
+  Same family of mistake on Z.ai: limit rows are keyed by `unit` (3 = 5 h, 6 =
+  weekly), not by the `type` name, which Z.ai has already renamed once.
 - **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
   (2026-09-14): percentages come from `bailian-cli` (`bl usage token-plan`)
   authenticated with the **main-account AccessKey** stored at
