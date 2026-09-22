@@ -90,10 +90,13 @@ host cron was removed 2026-09-14.
 - **Read a "100% on every model" Gemini card as a full allowance.** Google stamps
   a constant full bucket (every model, one shared rolling 5 h reset) for accounts
   it does not meter; the collector refuses to publish that pattern and names the
-  account's plan instead (DECISIONS.md 2026-09-21). The fix is an Antigravity
-  login on the account holding the Google AI plan — never invented percentages.
-  Same family of mistake on Z.ai: limit rows are keyed by `unit` (3 = 5 h, 6 =
-  weekly), not by the `type` name, which Z.ai has already renamed once.
+  account's plan instead (DECISIONS.md 2026-09-21). When the account **does** hold
+  an active AI plan and Google still answers `free-tier`, it is a Google
+  entitlement desync: re-adding the Antigravity login does not repair it
+  (verified 2026-09-22, DECISIONS.md 2026-09-22), so escalate to Google —
+  never invent percentages or blame the login. Z.ai shares the family: limit rows
+  are keyed by `unit` (3 = 5 h, 6 = weekly), not by the `type` name, which Z.ai has
+  already renamed once.
 - **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
   (2026-09-14): percentages come from `bailian-cli` (`bl usage token-plan`)
   authenticated with the **main-account AccessKey** stored at

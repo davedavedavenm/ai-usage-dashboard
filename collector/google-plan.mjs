@@ -132,20 +132,19 @@ export async function probeGooglePlan() {
   }
 }
 
-// Card text for the placeholder state: what Google actually said, and the only
-// action that makes real numbers appear.
+// Card text for the placeholder state: what Google actually said, and where the
+// fix actually lives. Re-authenticating does NOT clear this state (verified
+// 2026-09-22, DECISIONS.md) — the wording must not send anyone down that path.
 export function antigravityPlaceholderMessage(plan) {
   const parts = [];
   if (plan?.ok && plan.paidTier && plan.paidTier !== plan.tier) {
-    parts.push(`Antigravity is running on the "${plan.tier}" project while this account's paid tier is "${plan.paidTier}" — Google meters only the project enrolled in the plan`);
+    parts.push(`Google's API answers "${plan.tier}" for this account while naming "${plan.paidTier}" as its paid tier — the account's active AI subscription is not linked into Antigravity's entitlement system right now`);
   } else if (plan?.ok) {
-    parts.push(`Google meters no allowance for this Antigravity account — plan "${plan.tier}"${plan.upgradeOffered ? " (Google is offering it a paid-plan upgrade)" : ""}`);
+    parts.push(`Google treats this Antigravity account as "${plan.tier}" with no metered allowance${plan.upgradeOffered ? " (and offers it a paid-plan upgrade)" : ""}`);
   } else {
     parts.push("Google reports a constant full allowance for this Antigravity account (unmetered placeholder)");
   }
   parts.push("every model pinned to 100% with one rolling 5 h reset, so no real window can be shown");
-  parts.push(plan?.ok && plan.paidTier && plan.paidTier !== plan.tier
-    ? "fix: on khpi5, run opencode auth login → Google (Antigravity) and pick the project that carries the Google AI plan"
-    : "fix: on khpi5, run opencode auth login → Google (Antigravity) as the account holding the Google AI plan");
+  parts.push("fix: Google-side entitlement sync, not a login problem — re-adding this Antigravity account on khpi5 changed nothing (verified 2026-09-22); report it to Google (Antigravity Help → Send Feedback, or discuss.ai.google.dev) and this card recovers by itself");
   return parts.join(" · ");
 }

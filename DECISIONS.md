@@ -256,9 +256,9 @@ models** with the same `resetTime` = request time + 5 h. Proof on this host:
 `currentTier.id: "free-tier"` with a "Upgrade to get 1,500 model requests per day
 … with Google AI Pro" offer — the Antigravity credential on khpi5
 (`thedavidmagnus@gmail.com`, project `rising-fact-…`) is not on a paid plan, so
-Google publishes no windows for it. The 2026-08-30 premise above ("Dave has a
-Gemini AI subscription") therefore holds for the *person*, not for *this
-account*: a plan on another Google account is invisible to this credential.
+Google publishes no windows for it. The inference drawn here at the time — that
+the plan must live on a *different* Google account — was **wrong**; see the
+2026-09-22 entry below, which supersedes it.
 
 **Decision: the collector never publishes a report matching that signature.**
 `isConstantAntigravityReport()` (`collector/quota-parsers.mjs`) requires the
@@ -275,9 +275,66 @@ matches the pattern and the card resumes normal reporting by itself.
 - Do not "fix" the card by inventing numbers from local request counts: the
   limits are unknowable on an unmetered account, and the rule above §6 (no
   fabricated percentages) still applies.
-- Real numbers return when the Antigravity login is the account holding the plan
-  (`opencode auth login` → Google (Antigravity) on khpi5). Re-check the tier with
-  the probe, not by looking at the card.
+- ~~Real numbers return when the Antigravity login is the account holding the
+  plan~~ — disproven 2026-09-22: this account *is* the plan account, and
+  re-authenticating it changed nothing. Re-check the tier with the probe
+  (`collector/google-plan.mjs`), never by looking at the card.
+
+## Google's free-tier answer is a server-side entitlement desync, not a wrong login — Active (2026-09-22)
+
+Dave's Google subscriptions page shows **Google AI Pro active on
+`thedavidmagnus@gmail.com`** — the very account the khpi5 Antigravity credential
+uses. So the 2026-09-21 "plan must be on another account" reading was wrong, and
+the card text derived from it pointed at a fix that does not exist. Evidence
+gathered before reversing it:
+
+- **The card really was metered until mid-September.** `data/collector-state.json`
+  still holds the staged alert receipt `google-antigravity / agy-g3pro`, 15 %
+  stage sent **2026-09-13T16:20Z**, and an earlier `agy-claude` receipt on
+  2026-09-03. Percentages
+  that low cannot come from the placeholder.
+- **Nothing here changed in that window.** The quota CLI is lockfile-pinned at
+  `@slkiser/opencode-quota` 4.8.1 (`npm ci`; the lock is untouched since 2026-08-30),
+  the companion plugin is 1.6.0 with its cache dir dated 2026-08-16, and the one
+  stored credential has been untouched since **2026-08-16** with
+  `rateLimitResetTimes: {}` — so the September readings were genuine `quotaInfo`,
+  not a server-stamped rate-limit override.
+- **Google's entitlement API now refuses the plan.** `v1internal:loadCodeAssist`
+  answers `currentTier.id: "free-tier"` (name "Antigravity") with
+  `allowedTiers: [free-tier, standard-tier]` — `g1-pro-tier` is not even offered —
+  while still naming `paidTier.id: "g1-pro-tier"`. Identical on prod
+  `cloudcode-pa.googleapis.com` and on the `daily-cloudcode-pa` sandbox host.
+- **Client identity is not the gate.** User-Agents `antigravity/1.11.9` (the CLI's
+  hardcode), `1.18.3` (the plugin's) and the installed desktop build `2.15.1` all
+  return the same flat `remainingFraction: 1` across every bucket (only the model
+  catalogue grows, 27 → 33 entries). A `GeminiCLI/1.0.0` UA gets **HTTP 403**: this
+  credential's scopes do not cover the Gemini CLI quota family.
+- **The official client fails the same way.** The desktop Antigravity language
+  server (v2.15.1, session 2026-09-21) logs
+  `[AuthProvider] SetUserTier called with userTier: "", tierDisplayName: ""` — no
+  tier at all, straight off its own `loadCodeAssist` call. This is the documented
+  "paid AI Pro stuck on free tier / quota misalignment" family on
+  discuss.ai.google.dev (threads 2026-07-15 and 2026-09-09).
+- **Re-authentication does not repair it.** Re-running the plugin's account flow on
+  khpi5 (Add account → same address) left `currentTier: free-tier`, allowed tiers
+  unchanged, and all 33 buckets at 1.0 (it also appended a duplicate account row
+  for the same address). The onboarding/entitlement call the login makes is the
+  client's only lever, and it is not enough here.
+
+**Decision: the card states the verified diagnosis and sends the user to Google.**
+`antigravityPlaceholderMessage()` names the tier contradiction and says plainly
+that re-adding the account changed nothing (with the date), pointing at Antigravity
+Help → Send Feedback / discuss.ai.google.dev instead of a login that cannot help.
+The placeholder-suppression rule from 2026-09-21 is unchanged and still correct —
+it is the *cause* attribution that moved. Nothing local can restore the numbers;
+when Google re-links the subscription the real buckets reappear and the card heals
+itself, which `isConstantAntigravityReport()` will detect automatically.
+
+- Verify with the probe (`node -e` against `loadCodeAssist` via
+  `probeGooglePlan()`), never by eyeballing the card.
+- Do not re-litigate "wrong account" or "wrong project" without fresh evidence: the
+  subscription page names this address, both project ids (`rising-fact-…` and
+  Google's own `aicode-consumers`) answer free-tier, and the desktop app agrees.
 
 ## Z.ai limit rows are keyed by `unit`, not by the `type` name — Active (2026-09-21)
 
