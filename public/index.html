@@ -272,15 +272,15 @@
   <section class="settings" id="settingsPanel">
     <div class="sblock">
       <div class="shead">Qwen · Alibaba Token Plan</div>
-      <div class="ssub">automatic session capture via live qwen-browser container</div>
+      <div class="ssub">legacy fallback: browser session capture (primary source is the AccessKey gateway call)</div>
       <div class="srow">
         <span class="sstate" id="aliState">checking…</span>
         <span class="smsg" id="aliMsg" style="margin-top:0"></span>
       </div>
       <div class="steps" style="margin-top:8px">
-        <b>Live Chromium Browser Session:</b><br>
-        Percentages are auto-grabbed over CDP from the dedicated <code>qwen-browser</code> container on khpi5.<br>
-        To log in or renew your session, open the remote desktop console in your browser, and sign into Alibaba ModelStudio once:
+        <b>Legacy Browser Session Fallback:</b><br>
+        Percentages normally come from the AccessKey-backed gateway call — no browser needed. Only if that source fails and the legacy <code>qwen-browser</code> container is running (compose profile <code>qwen</code>), the collector auto-grabs its session over CDP instead.<br>
+        To log in or renew that fallback session, open the remote desktop console in your browser, and sign into Alibaba ModelStudio once:
         <div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap">
           <a class="sbtn secondary" href="https://192.168.1.143:3099" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px">
             🖥️ Open Desktop (LAN: 192.168.1.143:3099)
@@ -372,7 +372,7 @@ const META = {
   zai:                  { name: "Z.ai",              sub: "GLM Coding Plan",       accent: "#ec4899", hint: "Check <code>opencode auth</code> for zai-coding-plan." },
   "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Check <code>opencode auth</code> for opencode-go." },
   "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
-  "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan · Lite",     accent: "#9d7bea", hint: "Percentages come from a logged-in session in the <code>qwen-browser</code> container on khpi5, which the collector auto-grabs — no pasting. To log in or re-login open <code>https://192.168.1.143:3099</code> (LAN) or <code>https://100.65.57.85:3099</code> (tailnet; creds in stack .env; accept the self-signed cert warning) and sign into <code>modelstudio.console.alibabacloud.com</code>. Percentages reappear within 10 minutes." },
+  "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan",            accent: "#9d7bea", hint: "Percentages come from the Alibaba token-plan usage API, called directly with a console token that <code>bailian-cli</code> self-refreshes from the main-account AccessKey stored on khpi5 (<code>data/bailian/config.json</code>) — no browser, no login. If the card degrades to the amber <b>key mode</b> chip, check <code>docker compose logs collector</code>, then re-run <code>collector/qwen-openapi-setup.sh</code>. The legacy <code>qwen-browser</code> desktop (compose profile <code>qwen</code>, normally off) remains a fallback." },
   "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },
   "radeon-cloud":       { name: "Radeon Cloud",      sub: "AMD Token Factory · fleet load", accent: "#22d3ee", hint: "Public fleet-load feed (no auth). If this card errors, check khpi5 egress to <code>developer.amd.com.cn</code>." },
   openrouter:           { name: "OpenRouter",        sub: "credits",               accent: "#8b93a7" },

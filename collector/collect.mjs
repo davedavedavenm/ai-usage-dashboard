@@ -247,58 +247,143 @@ async function fetchQwen(cookie) {
     }
     return { status: "error", error: "Alibaba API error " + usage.error };
   }
-  const usageObj = usage.json && aliFindContaining(usage.json, ["per5HourPercentage", "per1WeekPercentage"]);
+  const usageObj = usage.json && aliFindContaining(usage.json, ["per5HourPercentage", "per1WeekPercentage", "per1MonthPercentage"]);
   if (!usageObj) return { status: "error", error: "Alibaba API error: no usage windows in response" };
-  const entries = [];
-  const p5 = aliPercent(usageObj.per5HourPercentage);
-  const pw = aliPercent(usageObj.per1WeekPercentage);
-  if (p5 != null) {
-    const reset = usageObj.per5HourResetTime ? new Date(usageObj.per5HourResetTime).toISOString() : undefined;
-    entries.push(pctEntry("Last 5 hours", 100 - p5, reset, "5h"));
-  }
-  if (pw != null) {
-    const reset = usageObj.per1WeekResetTime ? new Date(usageObj.per1WeekResetTime).toISOString() : undefined;
-    entries.push(pctEntry("This week", 100 - pw, reset, "weekly"));
-  }
+  const entries = qwenEntriesFromUsage(usageObj);
   if (!entries.length) return { status: "error", error: "Alibaba API error: usage windows empty" };
   return { status: "ok", label: "Qwen", entries, note: "live percentages via console session" };
 }
 
-// Token-plan percentages via bailian-cli. The CLI prints percentages USED as
-// fractions (per5HourPercentage / per1WeekPercentage; the Lite plan exposes
-// weekly only) plus reset times in epoch ms. It authenticates as the main
-// account via the stored AccessKey and self-refreshes its console token, so
-// this source survives console-session expiry — no browser, no manual login.
-function fetchQwenCli() {
-  if (!process.env.BAILIAN_CONFIG_DIR) return { status: "unavailable", error: "bailian-cli not configured" };
-  if (!existsSync(BL_BIN)) return { status: "unavailable", error: "bailian-cli binary not found at " + BL_BIN };
-  let out;
+// Token-plan percentages via the console gateway, using the same access token
+// bailian-cli maintains. The percentages are USED fractions plus reset times
+// in epoch ms. Since 2026-09-24 Alibaba answers the personal token-plan usage
+// API with a MONTHLY window (per1MonthPercentage/per1MonthResetTime) that
+// bailian-cli 2.0.1 does not parse — its `usage token-plan` prints `{}` — so
+// the collector calls the gateway directly and parses every window it gets.
+// bl still runs as the token refresher: on auth failure its invocation
+// regenerates the console token from the stored AccessKey and persists it to
+// config.json, after which the direct call is retried once.
+const BL_USAGE_API = "zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage";
+const BL_GATEWAY_URL = "https://bailian-singapore-cs.alibabacloud.com/cli/api.json?action=IntlBroadScopeAspnGateway&product=sfm_bailian&api=" +
+  encodeURIComponent(BL_USAGE_API);
+
+function readBlAccessToken() {
+  const dir = process.env.BAILIAN_CONFIG_DIR;
+  if (!dir) return "";
   try {
-    out = execFileSync(BL_BIN, ["usage", "token-plan", "--output", "json"], {
+    const cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
+    return typeof cfg.access_token === "string" ? cfg.access_token : "";
+  } catch {
+    return "";
+  }
+}
+
+// Wire format mirrors what bailian-cli sends (captured 2026-09-24): a
+// form-urlencoded body whose `params` field is the JSON envelope — a raw JSON
+// body makes the gateway answer with an HTML error page instead of data.
+async function blUsageDirect(token) {
+  const body = new URLSearchParams({
+    params: JSON.stringify({
+      Api: BL_USAGE_API,
+      V: "1.0",
+      Data: {
+        cornerstoneParam: {
+          protocol: "V2",
+          console: "ONE_CONSOLE",
+          productCode: "p_efm",
+          switchUserType: 3,
+          consoleSite: "BAILIAN_ALIYUN",
+        },
+      },
+    }),
+    region: "ap-southeast-1",
+  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  try {
+    const res = await fetch(BL_GATEWAY_URL, {
+      method: "POST",
+      headers: { Accept: "*/*", "Content-Type": "application/x-www-form-urlencoded", Authorization: "Bearer " + token },
+      body,
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch {}
+    if (!json) return { error: "HTTP " + res.status + " non-JSON response" };
+    const inner = json?.data?.DataV2?.data;
+    if (!inner || inner.success !== true) {
+      return { error: String(inner?.code || inner?.msg || json?.code || json?.message || "gateway error").slice(0, 160) };
+    }
+    return { usage: (inner.data && typeof inner.data === "object") ? inner.data : {} };
+  } catch (e) {
+    return { error: String(e.message || e).slice(0, 160) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function qwenEntriesFromUsage(usageObj) {
+  const entries = [];
+  const windows = [
+    ["per5HourPercentage", "per5HourResetTime", "Last 5 hours", "5h"],
+    ["per1WeekPercentage", "per1WeekResetTime", "This week", "weekly"],
+    ["per1MonthPercentage", "per1MonthResetTime", "This month", "monthly"],
+  ];
+  for (const [pctKey, resetKey, name, win] of windows) {
+    const pct = aliPercent(usageObj[pctKey]);
+    if (pct == null) continue;
+    entries.push(pctEntry(name, 100 - pct, usageObj[resetKey] ? new Date(usageObj[resetKey]).toISOString() : undefined, win));
+  }
+  return entries;
+}
+
+function runBlTokenPlan() {
+  try {
+    return execFileSync(BL_BIN, ["usage", "token-plan", "--output", "json"], {
       encoding: "utf8",
       timeout: 60000,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PATH: CLI_PATH, DO_NOT_TRACK: "1" },
     });
   } catch (e) {
-    return { status: "unavailable", error: "bailian-cli: " + String(e.stderr || e.message || e).slice(0, 160) };
+    return null;
   }
-  let parsed;
-  try { parsed = JSON.parse(out); } catch { return { status: "error", error: "bailian-cli: non-JSON output" }; }
-  if (parsed && parsed.error) {
-    return { status: "unavailable", error: "bailian-cli: " + String(parsed.error.message || parsed.error.code || "error").slice(0, 160) };
+}
+
+async function fetchQwenCli() {
+  if (!process.env.BAILIAN_CONFIG_DIR) return { status: "unavailable", error: "bailian-cli not configured" };
+  if (!existsSync(BL_BIN)) return { status: "unavailable", error: "bailian-cli binary not found at " + BL_BIN };
+  let lastError = "no console access token in config";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) {
+      // Side effect first: bl regenerates the console token from the AK/SK on
+      // expiry and persists it; its own stdout may also carry windows once a
+      // future bl release parses the monthly field.
+      const out = runBlTokenPlan();
+      if (out) {
+        try {
+          const parsed = JSON.parse(out);
+          if (parsed && !parsed.error) {
+            const entries = qwenEntriesFromUsage(parsed);
+            if (entries.length) return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey" };
+          }
+        } catch {}
+      }
+    }
+    const token = readBlAccessToken();
+    if (!token) continue;
+    const r = await blUsageDirect(token);
+    if (r.error) {
+      lastError = r.error;
+      if (/logined|login|auth|token|401|403/i.test(r.error)) continue; // refreshable — retry once
+      break;
+    }
+    const entries = qwenEntriesFromUsage(r.usage);
+    if (!entries.length) { lastError = "usage response has no windows"; break; }
+    return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey (direct gateway)" };
   }
-  const p5 = aliPercent(parsed.per5HourPercentage);
-  const pw = aliPercent(parsed.per1WeekPercentage);
-  const entries = [];
-  if (p5 != null) {
-    entries.push(pctEntry("Last 5 hours", 100 - p5, parsed.per5HourResetTime ? new Date(parsed.per5HourResetTime).toISOString() : undefined, "5h"));
-  }
-  if (pw != null) {
-    entries.push(pctEntry("This week", 100 - pw, parsed.per1WeekResetTime ? new Date(parsed.per1WeekResetTime).toISOString() : undefined, "weekly"));
-  }
-  if (!entries.length) return { status: "error", error: "bailian-cli: no usage windows in output" };
-  return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey" };
+  return { status: "unavailable", error: "bailian gateway: " + lastError };
 }
 
 function runStatusCli(providerId) {

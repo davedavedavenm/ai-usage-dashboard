@@ -6,10 +6,13 @@
 #
 #   ssh -t khpi5 'bash /home/dave/stacks/ai-usage-dashboard/collector/qwen-openapi-setup.sh'
 #
-# Why: bailian-cli's `usage token-plan` calls the same usage API the dashboard
-# uses, but authenticates via a Bearer token it can self-refresh from the
-# AK/SK (GenerateCLIAccessToken). AccessKeys don't expire — no browser
-# session, no periodic manual login.
+# Why: the collector calls the personal token-plan usage API directly; this
+# script stores the AK/SK that `bailian-cli` uses to mint and self-refresh the
+# console Bearer token (GenerateCLIAccessToken) that authenticates those calls.
+# AccessKeys don't expire — no browser session, no periodic manual login.
+# (Since 2026-09-24 the API answers with a monthly window that bl 2.0.1 does
+# not parse — `bl usage token-plan` printing `{}` is normal; bl's only
+# remaining job is the token refresh. See DECISIONS.md 2026-09-24.)
 #
 # The token-plan is a PERSONAL plan: only the MAIN ACCOUNT identity can read
 # it (a RAM user authenticates fine but is refused with
@@ -57,9 +60,22 @@ docker run --rm -it \
       fs.writeFileSync(f, JSON.stringify(c, null, 2) + \"\n\");
       console.log(\"config patched for the international console\");
     "
-    echo "--- Token Plan usage probe:"
-    bl usage token-plan --output json
+    echo "--- Token Plan usage probe (direct gateway):"
+    node -e "
+      const fs = require(\"fs\");
+      const cfg = JSON.parse(fs.readFileSync(\"/cfg/config.json\", \"utf8\"));
+      const api = \"zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage\";
+      const url = \"https://bailian-singapore-cs.alibabacloud.com/cli/api.json?action=IntlBroadScopeAspnGateway&product=sfm_bailian&api=\" + encodeURIComponent(api);
+      const body = new URLSearchParams({ params: JSON.stringify({ Api: api, V: \"1.0\", Data: { cornerstoneParam: { protocol: \"V2\", console: \"ONE_CONSOLE\", productCode: \"p_efm\", switchUserType: 3, consoleSite: \"BAILIAN_ALIYUN\" } } }), region: \"ap-southeast-1\" });
+      fetch(url, { method: \"POST\", headers: { Accept: \"*/*\", \"Content-Type\": \"application/x-www-form-urlencoded\", Authorization: \"Bearer \" + cfg.access_token }, body })
+        .then(r => r.json())
+        .then(j => { const d = j && j.data && j.data.DataV2 && j.data.DataV2.data && j.data.DataV2.data.data; console.log(JSON.stringify(d || j, null, 2)); if (!d) process.exit(1); })
+        .catch(e => { console.error(\"probe failed:\", e.message); process.exit(1); });
+    "
   '
 
 echo
-echo "If the probe printed per5Hour/per1Week fields, the path works."
+echo "If the probe printed usage-window fields (per1MonthPercentage/per1MonthResetTime"
+echo "today), the path works. Note: 'bl usage token-plan --output json' printing {} is"
+echo "EXPECTED with bl 2.0.1 — it cannot parse the monthly-window shape; the collector"
+echo "calls the gateway directly."
