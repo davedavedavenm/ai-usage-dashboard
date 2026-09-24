@@ -197,16 +197,62 @@ Settled details (all verified 2026-09-14):
   `IntlBroadScopeAspnGateway`), `base_url=https://dashscope-intl.aliyuncs.com`
   (drives the OpenAPI host for token refreshes — without it the refresh hits
   the CN host and the minted token is refused), `telemetry=false`.
-- Collector source order: (1) `bailian-cli` (`fetchQwenCli`,
-  `BAILIAN_CONFIG_DIR=/data/bailian`) → (2) legacy CDP grab → (3) settings
-  cookie → (4) token-plan key probe. The CLI reports percentages **used** as
-  fractions; the collector converts to `percentRemaining`.
+- Collector source order: (1) token-plan usage API via the console gateway
+  (`fetchQwenCli`, direct call on the bailian-cli-maintained token — see the
+  2026-09-24 entry below; `BAILIAN_CONFIG_DIR=/data/bailian`) → (2) legacy
+  CDP grab → (3) settings cookie → (4) token-plan key probe. The API reports
+  percentages **used** as fractions; the collector converts to
+  `percentRemaining`.
 - **Retired same day**: `qwen-browser` + `cdp-relay` stopped and the
   `*/2 qwen-watchdog` host cron removed — nothing depends on a live console
   session any more. The `qwen` compose profile, CDP grab, keepalive and the
   watchdog script stay in the repo as an off-by-default fallback. The
   collector's 2-hourly keepalive still logs `SESSION_EXPIRED` against the old
   cookie (harmless noise) until the browser path is revived.
+
+## Qwen usage moved to a monthly window; collector calls the gateway directly — Active (2026-09-24)
+
+Between 2026-09-20 (last real weekly alert receipts in `collector-state.json`)
+and 2026-09-24, Alibaba changed the personal token-plan usage API
+(`zeldaHttp.apikeyMgr./tokenplan/personal/api/v2/usage`): it now answers with a
+**monthly** window (`per1MonthPercentage` / `per1MonthResetTime`, reset
+2026-10-21T16:00Z at first observation) instead of 5 h/weekly pairs.
+`bailian-cli` 2.0.1 (current on npm) only parses `per5Hour*`/`per1Week*` and
+therefore prints `{}` — which silently dropped the card to the coarse key
+probe ("quota available", no percentages).
+
+Decision: `fetchQwenCli()` now calls the console gateway **directly** with the
+access token bl maintains in `data/bailian/config.json`, and parses every
+window the response contains (5 h / weekly / monthly). bl is kept as the
+**token refresher**: on an auth-shaped failure the collector runs
+`bl usage token-plan` once (side effect: `GenerateCLIAccessToken` from the
+stored AccessKey, persisted back to config.json), then retries the direct
+call. If a future bl release parses the monthly field, its stdout windows are
+used as before. No credential handling changed — same config file, same
+main-account AccessKey decision from 2026-09-14.
+
+Wire format (captured from bl 2.0.1, verified 2026-09-24): POST to
+`https://bailian-singapore-cs.alibabacloud.com/cli/api.json?action=IntlBroadScopeAspnGateway&product=sfm_bailian&api=<urlencoded api>`
+with headers `Accept: */*`, `Authorization: Bearer <console token>` and —
+counter-intuitively — `Content-Type: application/x-www-form-urlencoded` with a
+form body `params=<urlencoded JSON envelope>&region=ap-southeast-1`. A JSON
+body/content-type makes the gateway answer HTTP 200 with a Taobao HTML error
+page; do not "fix" the content type. The JSON envelope is
+`{Api, V:"1.0", Data:{cornerstoneParam:{protocol:"V2",console:"ONE_CONSOLE",
+productCode:"p_efm",switchUserType:3,consoleSite:"BAILIAN_ALIYUN"}}}`; usage
+lands at `data.DataV2.data.data`.
+
+Dead ends checked the same day (all answer `200` with empty data for this
+account — the monthly usage API above is the only live percentage source):
+`bl usage coding-plan`, `bl token-plan list-seats` (`Total: 0`),
+`bl token-plan harness-quota` (`items: []`), and the underlying
+`token-plan.detail` / `queryTokenPlanEquityInfo` gateway calls.
+
+Verification after deploy: `/api/quota` →
+`alibaba-coding-plan` = `This month 92% remaining, reset 2026-10-21T16:00Z,
+note "token-plan usage via AccessKey (direct gateway)"` (2026-09-24T06:59Z
+collect). The percentage moves with real usage — it fell 94.7 → 92 within an
+hour of agent traffic on the plan.
 
 ## google-agy probe removed — Active (2026-08-30)
 
@@ -332,6 +378,10 @@ itself, which `isConstantAntigravityReport()` will detect automatically.
 
 - Verify with the probe (`node -e` against `loadCodeAssist` via
   `probeGooglePlan()`), never by eyeballing the card.
+- Re-verified 2026-09-24: `loadCodeAssist` still answers `free-tier` +
+  `paidTier: g1-pro-tier` + upgrade offer on the stored credential, identical
+  across client UA variants (`antigravity/1.11.9`, `2.0.6 darwin/linux`, no
+  UA, apiClient header) — the desync persists; nothing local changed.
 - Do not re-litigate "wrong account" or "wrong project" without fresh evidence: the
   subscription page names this address, both project ids (`rising-fact-…` and
   Google's own `aicode-consumers`) answer free-tier, and the desktop app agrees.

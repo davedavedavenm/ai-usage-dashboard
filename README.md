@@ -8,7 +8,8 @@ Qwen — with Telegram alerts when any window runs low and rollover warnings
 Everything runs in containers: the server is a single zero-dependency Node
 file, the collector probes the providers' quota APIs every 10 minutes and
 pushes results via a key-protected ingest endpoint. Qwen percentages come
-from the official `bailian-cli` with an Alibaba Cloud AccessKey (see *Qwen*
+from the Alibaba token-plan usage API, called directly with a console token
+that `bailian-cli` self-refreshes from an Alibaba Cloud AccessKey (see *Qwen*
 below); the legacy `qwen-browser` remote-desktop profile remains in the repo
 as an optional fallback. No host cron, no workstation dependencies.
 
@@ -16,7 +17,7 @@ as an optional fallback. No host cron, no workstation dependencies.
 provider quota APIs (Z.ai, opencode.ai, Anthropic/OpenAI OAuth, Google AI, Alibaba ...)
         │
 collector container ── runner.mjs (every 10 min) ──> POST /api/ingest (X-Ingest-Key)
-        │                 └── bailian-cli → Alibaba token-plan usage API
+        │                 └── Alibaba token-plan usage API (direct; bl-maintained token)
         ▼
 server container ── GET / dashboard
 ```
@@ -73,11 +74,14 @@ The collector picks new credentials up on its next 10-minute run.
 
 ### Qwen (Alibaba Token Plan)
 
-Percentages come from the official `bailian-cli` (`bl usage token-plan`),
-authenticated with an Alibaba Cloud AccessKey stored in
-`data/bailian/config.json` (gitignored, same handling as `settings.json`).
-The CLI self-refreshes its console token from the AccessKey, so this source
-survives console-session expiry — **no browser, no periodic login**.
+Percentages come from the Alibaba token-plan usage API, called directly by
+the collector with the console token that `bailian-cli` maintains from an
+Alibaba Cloud AccessKey stored in `data/bailian/config.json` (gitignored,
+same handling as `settings.json`). bl self-refreshes that token from the
+AccessKey, so this source survives console-session expiry — **no browser, no
+periodic login**. Since 2026-09-24 Alibaba reports a **monthly** usage window
+which bl 2.0.1's own `usage token-plan` cannot parse (it prints `{}`), hence
+the direct gateway call — see DECISIONS.md.
 
 One-time setup (on the stack host):
 
@@ -92,7 +96,7 @@ main-account AccessKey, an accepted risk recorded in DECISIONS.md. Rotate it
 in the RAM console if it may have been exposed; re-run the setup script to
 store the new key.
 
-If the CLI source fails, the collector degrades through the legacy
+If the AccessKey source fails, the collector degrades through the legacy
 `qwen-browser` CDP grab / settings cookie and finally the token-plan API key
 (amber **key mode** chip: available / exhausted + reset, no percentages).
 
@@ -105,7 +109,7 @@ If the CLI source fails, the collector degrades through the legacy
 | Z.ai | direct quota API | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Pro, G3Flash, …) | `opencode auth login` → Google (Antigravity) |
-| Qwen | Alibaba Token Plan usage API (via `bailian-cli`) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
+| Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 | Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
@@ -117,7 +121,7 @@ glow.
 Configured via the Settings tab (Telegram bot token/chat ID and optional webhook URL):
 
 - **Low-allowance warnings**: Staged notifications when the tightest window hits the configured threshold (default 15%) and when it hits 0% (exhausted).
-- **Rollover / reset warnings**: Sent **24 hours** and **12 hours** before each agent's longest allowance window (monthly for OpenCode Go, weekly for Claude, OpenAI, Qwen, Z.ai) resets. Fires only when allowance remains (`> 0%`) so you can make maximum use of quota before rollover. Short 5-hour rolling limits are excluded to prevent spam.
+- **Rollover / reset warnings**: Sent **24 hours** and **12 hours** before each agent's longest allowance window (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai) resets. Fires only when allowance remains (`> 0%`) so you can make maximum use of quota before rollover. Short 5-hour rolling limits are excluded to prevent spam.
 
 ## API
 

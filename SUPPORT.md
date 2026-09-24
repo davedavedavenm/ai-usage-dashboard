@@ -71,19 +71,24 @@ will say so).
 
 ### Qwen live percentages
 
-Percentages come from `bailian-cli` on an Alibaba Cloud AccessKey:
+Percentages come from the Alibaba token-plan usage API, called directly by
+the collector with a console token that `bailian-cli` self-refreshes from an
+Alibaba Cloud AccessKey:
 
 1. In the Alibaba Cloud RAM console, create an AccessKey (the token-plan is
    personal — the key must be the **main account's**, a RAM user is refused
    with `Team.NotAuthorised`; accepted risk, see DECISIONS.md).
 2. On the stack host: `bash collector/qwen-openapi-setup.sh` — it prompts for
    the AccessKey ID/secret, stores them in `data/bailian/config.json`, and
-   probes the usage API. Expect `per5Hour`/`per1Week` fields back.
+   probes the usage API. Since 2026-09-24 Alibaba answers with a **monthly**
+   window (`per1MonthPercentage`/`per1MonthResetTime`); `bl` 2.0.1's own
+   `usage token-plan` prints `{}` for that shape, so the setup script probes
+   the raw gateway instead.
 3. Done — the collector reads percentages every cycle; `bailian-cli`
    self-refreshes its console token from the key. Never expiring, never a
    login.
 
-If the CLI source fails, the card falls back to the legacy `qwen-browser`
+If the AccessKey source fails, the card falls back to the legacy `qwen-browser`
 CDP grab / cookie, then the token-plan API key (availability only, amber
 "key mode" chip). The `qwen` profile exists as an off-by-default fallback:
 `docker compose --profile qwen up -d` revives the remote desktop at
@@ -110,8 +115,8 @@ anything that did not report. A missing card means it was skipped, not lost.
 | "Awaiting first sync" | no usable credential at all | §3 logins |
 | Card says `not connected` + hint text | provider skipped: no credential | do that provider's login |
 | Claude card dead, hint says re-login | **check the log first** — the classic false alarm is the quota CLI not finding `claude`; the collector image ships it, so if you run the collector outside Docker make sure `claude` is on PATH | log line `skipped.anthropic` tells the truth |
-| Qwen card amber `key mode` chip | `bailian-cli` source failed (rejected/expired AccessKey, network) | `docker compose logs collector`, then re-run `collector/qwen-openapi-setup.sh` |
-| Qwen percentages still missing 10 min after setup | CLI probe failed | run `docker compose exec collector bl usage token-plan --output json` and check `data/bailian/config.json` exists |
+| Qwen card amber `key mode` chip | AccessKey gateway source failed (rejected/expired AccessKey, network) | `docker compose logs collector`, then re-run `collector/qwen-openapi-setup.sh` |
+| Qwen percentages still missing 10 min after setup | direct gateway probe failed | check `data/bailian/config.json` exists and look for `bailian gateway:` errors in `docker compose logs collector`. Note: `bl usage token-plan --output json` printing `{}` is **expected** since 2026-09-24 (bl 2.0.1 cannot parse the monthly-window shape; the collector calls the gateway directly) |
 | Qwen legacy desktop URL not loading | `QWEN_UI_BIND` loopback-only or stack stopped | legacy fallback only: set LAN IP in `.env`, `docker compose --profile qwen up -d` |
 | Collector log shows `CDP HTTP 500` / `Host heade...` | Host-header regression in `cdp-cookies.mjs` (Chromium DevTools validates it; must use `node:http`+`ws`, not fetch) | don't refactor those calls back to fetch |
 | `docker compose up` errors about `CREDENTIALS_ROOT` | env var unset | set it in `.env` |
