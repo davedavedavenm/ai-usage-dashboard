@@ -311,9 +311,13 @@ async function blUsageDirect(token) {
     let json = null;
     try { json = JSON.parse(text); } catch {}
     if (!json) return { error: "HTTP " + res.status + " non-JSON response" };
-    const inner = json?.data?.DataV2?.data;
+    const data = json?.data;
+    if (data?.success === false) {
+      return { error: String(data?.errorCode || data?.errorMsg || "gateway error").slice(0, 160) };
+    }
+    const inner = data?.DataV2?.data;
     if (!inner || inner.success !== true) {
-      return { error: String(inner?.code || inner?.msg || json?.code || json?.message || "gateway error").slice(0, 160) };
+      return { error: String(inner?.code || inner?.msg || data?.errorCode || data?.errorMsg || json?.message || "gateway error").slice(0, 160) };
     }
     return { usage: (inner.data && typeof inner.data === "object") ? inner.data : {} };
   } catch (e) {
@@ -372,11 +376,14 @@ async function fetchQwenCli() {
       }
     }
     const token = readBlAccessToken();
-    if (!token) continue;
+    if (!token) {
+      if (attempt === 0) continue;
+      break;
+    }
     const r = await blUsageDirect(token);
     if (r.error) {
       lastError = r.error;
-      if (/logined|login|auth|token|401|403/i.test(r.error)) continue; // refreshable — retry once
+      if (attempt === 0) continue; // retry once on attempt 1 after refreshing via bl
       break;
     }
     const entries = qwenEntriesFromUsage(r.usage);

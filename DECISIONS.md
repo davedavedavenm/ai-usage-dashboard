@@ -254,6 +254,15 @@ note "token-plan usage via AccessKey (direct gateway)"` (2026-09-24T06:59Z
 collect). The percentage moves with real usage — it fell 94.7 → 92 within an
 hour of agent traffic on the plan.
 
+Auto-refresh fix (2026-09-25): When the console token expired, the gateway
+returned `{code: "200", data: {success: false, errorCode: "BailianGateway.Login.NotLogined"}}`.
+`blUsageDirect()` previously fell back to `json.code` ("200") instead of
+`data.errorCode`, causing `fetchQwenCli` to skip the `runBlTokenPlan()` refresh
+attempt. `blUsageDirect` now surfaces `data.errorCode` / `data.errorMsg` and
+`fetchQwenCli` unconditionally retries on attempt 0 so the token
+auto-refreshes seamlessly from the AccessKey without requiring manual intervention.
+
+
 ## google-agy probe removed — Active (2026-08-30)
 
 The `google-agy` (Antigravity CLI / AI Studio) probe was probed but skipped
