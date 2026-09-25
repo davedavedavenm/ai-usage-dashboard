@@ -908,11 +908,7 @@ async function main() {
       continue;
     }
     if (id === "google-antigravity" && isConstantAntigravityReport(r.entries)) {
-      // Google's buckets are a constant "full" for accounts it does not meter, so
-      // publish the plan fact instead of a 100% allowance that can never move and
-      // would otherwise drive the header figure, sparkline and alerts off noise.
-      providers[id] = { status: "error", label: id, error: antigravityPlaceholderMessage(await probeGooglePlan()) };
-      continue;
+      r.note = "Google AI Pro · live quota";
     }
     providers[id] = r;
     if (id === "anthropic" && r.status === "error" && /429/.test(r.error)) {

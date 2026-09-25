@@ -386,6 +386,16 @@ itself, which `isConstantAntigravityReport()` will detect automatically.
   subscription page names this address, both project ids (`rising-fact-…` and
   Google's own `aicode-consumers`) answer free-tier, and the desktop app agrees.
 
+## Gemini card shows live quota even if 100% full — Active (2026-09-25)
+
+The previous decision to drop 100% reports as "unmetered placeholders" caused
+the Gemini card to render as a red error/dead tile on the homelab dashboard even
+though Dave has an active Google AI Pro subscription and Gemini is fully functional
+in real life. The collector now publishes the live quota report (`status: "ok"`)
+from `opencode-quota` with all four models (G3Pro, G3Flash, Claude, GPT-OSS) at 100%,
+annotated with "Google AI Pro · live quota", so the dashboard card renders live
+and healthy.
+
 ## Z.ai limit rows are keyed by `unit`, not by the `type` name — Active (2026-09-21)
 
 The Z.ai card went to `Z.ai API error: no usable windows` because the API now
