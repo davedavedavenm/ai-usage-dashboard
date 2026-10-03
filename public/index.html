@@ -17,7 +17,10 @@
     --red: #f25d5d;
     --green: #3ddc97;
     --font-display: "Bahnschrift", "Archivo", "Barlow Semi Condensed", "Segoe UI", sans-serif;
-    --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --font-mono: Consolas, "Cascadia Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    /* Consolas first: a broken first-choice named font blanks every card value
+       (hero %, tags, minis all use --font-mono; 2026-10-03: Cascadia Mono shaped
+       zero-width advances in Firefox, zero-width boxes, no glyphs painted). */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { color-scheme: dark; }

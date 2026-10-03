@@ -618,6 +618,20 @@ per-key quota endpoint (`GET /api/profile/model-usage` on
 Radeon allowance card is ever wanted; it needs an `rc-` API key and is
 deliberately not wired today.
 
+## Dashboard mono font stack leads with Consolas - Active (2026-10-03)
+
+Every card value (hero %, window tags, reset times, mini labels, state chips,
+subtitles) renders in `--font-mono`; only the card title uses the display
+font. On 2026-10-03 Firefox 157 shaped the previous stack leader
+("Cascadia Mono") with zero-width advances: DOM text present and selectable,
+computed color/opacity/visibility all normal, but every `.bignum` measured
+`0px` wide (`scrollWidth` 0 too, so not a flex/layout collapse) and no glyph
+painted. Forcing `Consolas` live in devtools restored all values instantly.
+`--font-mono` now leads with `Consolas` (ships with every Windows, most
+reliable) and keeps the Cascadia/JetBrains names behind it as progressive
+enhancement. Lesson: a single broken named font at the head of the stack
+blanks the whole dashboard body with zero console errors.
+
 ---
 
 Related: `README.md` (architecture, API, login flows) · infra repo
