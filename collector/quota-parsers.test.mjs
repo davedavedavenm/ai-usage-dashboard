@@ -79,8 +79,9 @@ test('parseAnthropicOAuthUsage parses live /api/oauth/usage payload and weekly b
   assert.equal(parseAnthropicOAuthUsage(null), null);
 });
 
-test('extractAntigravityModelEntries maps Claude 5.5, Gemini 3.1-flash-image, and Gemini 3.6/3.8 Flash', () => {
+test('extractAntigravityModelEntries maps G4Argon, Claude 5.5, Gemini 3.1-flash-image, and Gemini 3.6/3.8 Flash', () => {
   const models = {
+    'gemini-4-argon': { quotaInfo: { remainingFraction: 0.85, resetTime: '2026-10-17T11:13:07Z' } },
     'gemini-3.1-pro-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'gemini-3.8-flash-tiered': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'claude-opus-5-5-high': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
@@ -89,6 +90,7 @@ test('extractAntigravityModelEntries maps Claude 5.5, Gemini 3.1-flash-image, an
   };
   const entries = extractAntigravityModelEntries(models);
   assert.deepEqual(entries, [
+    { name: 'G4Argon', renderType: 'percent', percentRemaining: 85, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g4argon' },
     { name: 'G3Pro', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3pro' },
     { name: 'G3Flash', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3flash' },
     { name: 'Claude', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-claude' },

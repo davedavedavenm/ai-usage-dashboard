@@ -104,6 +104,21 @@ export function parseAnthropicOAuthUsage(data) {
 
 const ANTIGRAVITY_MODEL_SPECS = [
   {
+    id: "G4ARGON",
+    name: "G4Argon",
+    window: "agy-g4argon",
+    keys: [
+      "gemini-4-argon",
+      "gemini-4-argon-high",
+      "gemini-4-argon-medium",
+      "gemini-4-argon-low",
+      "gemini-4-argon-contributor",
+      "gemini-4-pro",
+      "gemini-4-flash",
+    ],
+    prefixRe: /^gemini-4(?:\.\d+)?-|argon/i,
+  },
+  {
     id: "G3PRO",
     name: "G3Pro",
     window: "agy-g3pro",

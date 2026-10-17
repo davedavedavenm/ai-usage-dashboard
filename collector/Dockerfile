@@ -36,16 +36,25 @@ RUN node -e '\
   console.log("patched STATUS_LIVE_ENTRY_LIMIT 2 -> 12 in " + f); \
   const tf = "node_modules/@slkiser/opencode-quota/dist/lib/types.js"; \
   let ts = fs.readFileSync(tf, "utf8"); \
+  const g3proHead = "    G3PRO: {"; \
+  const g4argonAndG3proHead = "    G4ARGON: { key: \"gemini-4-argon\", altKey: \"gemini-4-argon-high|gemini-4-argon-medium|gemini-4-argon-low|gemini-4-argon-contributor|gemini-4-pro|gemini-4-flash\", display: \"G4Argon\" }, G3PRO: {"; \
   const flashBefore = "altKey: \"gemini-3-flash-medium|gemini-3-flash-high|gemini-3-flash-low|gemini-3-5-flash-medium|gemini-3-5-flash-high|gemini-3-5-flash-low|gemini-3.5-flash-medium|gemini-3.5-flash-high|gemini-3.5-flash-low\","; \
   const flashAfter = "altKey: \"gemini-3.8-flash-tiered|gemini-3.6-flash-high|gemini-3.6-flash-medium|gemini-3.6-flash-low|gemini-3-flash-medium|gemini-3-flash-high|gemini-3-flash-low|gemini-3-5-flash-medium|gemini-3-5-flash-high|gemini-3-5-flash-low|gemini-3.5-flash-medium|gemini-3.5-flash-high|gemini-3.5-flash-low\","; \
   const claudeBefore = "altKey: \"claude-opus-4-5-thinking|claude-opus-4-5|claude-sonnet-4-6|claude-sonnet-4-6-thinking|claude-opus-4-6|gemini-claude-sonnet-4-6|gemini-claude-opus-4-6-thinking\","; \
   const claudeAfter = "altKey: \"claude-opus-5-5-high|claude-opus-5-5-medium|claude-opus-5-5-low|claude-sonnet-5-5-high|claude-sonnet-5-5-medium|claude-sonnet-5-5-low|claude-opus-4-5-thinking|claude-opus-4-5|claude-sonnet-4-6|claude-sonnet-4-6-thinking|claude-opus-4-6|gemini-claude-sonnet-4-6|gemini-claude-opus-4-6-thinking\","; \
   const imgBefore = "G3IMAGE: { key: \"gemini-3-pro-image\", display: \"G3Image\" },"; \
   const imgAfter = "G3IMAGE: { key: \"gemini-3.1-flash-image\", altKey: \"gemini-3-pro-image|gemini-3.1-flash-image-preview\", display: \"G3Image\" },"; \
-  if (!ts.includes(flashBefore) || !ts.includes(claudeBefore) || !ts.includes(imgBefore)) { console.error("PATCH GUARD FAILED: GOOGLE_MODEL_KEYS shape changed in " + tf); process.exit(1); } \
-  ts = ts.replace(flashBefore, flashAfter).replace(claudeBefore, claudeAfter).replace(imgBefore, imgAfter); \
+  if (!ts.includes(g3proHead) || !ts.includes(flashBefore) || !ts.includes(claudeBefore) || !ts.includes(imgBefore)) { console.error("PATCH GUARD FAILED: GOOGLE_MODEL_KEYS shape changed in " + tf); process.exit(1); } \
+  ts = ts.replace(g3proHead, g4argonAndG3proHead).replace(flashBefore, flashAfter).replace(claudeBefore, claudeAfter).replace(imgBefore, imgAfter); \
   fs.writeFileSync(tf, ts); \
-  console.log("patched GOOGLE_MODEL_KEYS (Claude 5.5 + G3Image 3.1 + G3Flash 3.6/3.8) in " + tf); \
+  console.log("patched GOOGLE_MODEL_KEYS (G4Argon + Claude 5.5 + G3Image 3.1 + G3Flash 3.6/3.8) in " + tf); \
+  const cf = "node_modules/@slkiser/opencode-quota/dist/lib/config.js"; \
+  let cs = fs.readFileSync(cf, "utf8"); \
+  const validBefore = "[\"G3PRO\", \"G3FLASH\", \"CLAUDE\", \"G3IMAGE\", \"GPTOSS\"]"; \
+  const validAfter = "[\"G4ARGON\", \"G3PRO\", \"G3FLASH\", \"CLAUDE\", \"G3IMAGE\", \"GPTOSS\"]"; \
+  if (!cs.includes(validBefore)) { console.error("PATCH GUARD FAILED: isValidGoogleModelId list not found in " + cf); process.exit(1); } \
+  fs.writeFileSync(cf, cs.replace(validBefore, validAfter)); \
+  console.log("patched isValidGoogleModelId (added G4ARGON) in " + cf); \
   const af = "node_modules/@slkiser/opencode-quota/dist/lib/anthropic.js"; \
   let as = fs.readFileSync(af, "utf8"); \
   const toBefore = "const CLAUDE_COMMAND_TIMEOUT_MS = 3_000;"; \

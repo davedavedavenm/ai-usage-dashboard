@@ -475,7 +475,7 @@ function parseStatus(text) {
 // Google AI plan. Map the CLI's display names to stable window ids so the
 // dashboard can sort and dedupe them.
 const AGY_MODEL_WINDOWS = {
-  "G3Pro": "agy-g3pro", "G3Flash": "agy-g3flash", "Claude": "agy-claude",
+  "G4Argon": "agy-g4argon", "G3Pro": "agy-g3pro", "G3Flash": "agy-g3flash", "Claude": "agy-claude",
   "G3Image": "agy-g3image", "GPT-OSS": "agy-gptoss",
 };
 

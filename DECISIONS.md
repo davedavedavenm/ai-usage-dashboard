@@ -288,7 +288,7 @@ windows (G3Pro, G3Flash, Claude, G3Image, GPTOSS models — each its own
 the `googleModels` key in `~/.config/opencode/opencode-quota/quota-toast.json`,
 authenticated with the existing Antigravity OAuth (no extra login).
 
-- `googleModels` valid ids: G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS.
+- `googleModels` valid ids: G4ARGON, G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS (`G4ARGON` pre-wired for `gemini-4-argon*` / `gemini-4-*`).
 - The quota CLI hard-caps status output at 2 live entries
   (`STATUS_LIVE_ENTRY_LIMIT` in quota-status.js — not configurable, and
   `--json` lacks entries entirely), so more than 2 models silently drop
