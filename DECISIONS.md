@@ -475,13 +475,27 @@ for fresh installs, and khpi5's `.env` pins LAN + tailnet.
 | ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
 | Gemini/Antigravity | opencode-quota CLI (`google-antigravity`, `googleModels` = plan model windows) | `~/.config/opencode/antigravity-accounts.json` | n/a while account valid (refresh handled inside the plugin's account store; manual re-login via `opencode auth login` → Google (Antigravity) if it ages out) |
 | Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
-| OpenCode Go | direct usage API | `auth.json` API key | n/a |
+| OpenCode Go | direct usage API | `auth.json` API key | **manual** — key carries an expiry date; renew via OpenCode Console + `opencode auth login -p opencode-go` on khpi5 (see note below) |
 | Qwen (Alibaba Token Plan) | token-plan usage API via `bailian-cli` (real percentages); token-plan key probe fallback | main-account AccessKey at `data/bailian/config.json` (self-refreshing console token) + `auth.json` key | **automatic** — token refresh via the AccessKey; browser path retired 2026-09-14 |
 
 A manual `claude login` / `opencode auth login` is a **fallback**, not part of
 normal operation. If the dashboard suggests logging in again, first check
 `grep skipped collect.log` and the auth matrix above — the 2026-08-25 incident
 showed a healthy credential being reported as a login problem.
+
+**OpenCode Go keys expire — renew on khpi5 (2026-10-17 incident).** The
+console-issued key carries an expiry date; when it lapses every probe gets
+`401 api_key_expired` (last ok 17:50 local, first failure 18:00 local — a hard
+cutoff between two scheduled runs) and the card shows the raw error. Renewal is
+manual: create a new key in OpenCode Console, then on khpi5 run
+`opencode auth login -p opencode-go` and paste it; force a probe with
+`curl -X POST http://127.0.0.1:8099/api/collect`. Two traps: (1) re-authenticating
+in a browser/console or on another machine changes nothing — the collector reads
+only khpi5's `auth.json`; (2) the collector's ChatGPT token rotation rewrites
+that file as root, so a dave-side login can be refused —
+`sudo chown dave:dave ~/.local/share/opencode/auth.json` first. Verified same
+evening: on-demand collect returned rolling/weekly/monthly `ok`, all 7
+providers green.
 
 **ChatGPT does not self-refresh on a headless box — Historical gotcha.**
 opencode refreshes its openai OAuth token lazily, only while being used
