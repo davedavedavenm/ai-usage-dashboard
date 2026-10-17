@@ -59,10 +59,24 @@ function mergeCookies(original, setCookieHeaders) {
   return cookieHeaderFromPairs([...map.entries()].map(([name, value]) => ({ name, value })));
 }
 
+function hasBailianAccessKeyConfig() {
+  const dir = process.env.BAILIAN_CONFIG_DIR;
+  if (!dir) return false;
+  try {
+    const cfg = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
+    return Boolean(cfg && (cfg.access_token || cfg.access_key_id));
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
   const cookie = settings.alibabaCookie || "";
   if (!cookie) {
+    if (hasBailianAccessKeyConfig()) {
+      process.exit(0);
+    }
     console.error("No alibabaCookie in settings.json.");
     process.exit(1);
   }
@@ -71,6 +85,10 @@ async function main() {
   // Authoritative check first: is the session actually alive?
   const pre = await verifyAliCookie(cookie);
   if (!pre.ok) {
+    if (hasBailianAccessKeyConfig()) {
+      console.log(`Legacy alibabaCookie expired (${pre.reason}); bailian-cli AccessKey is active — skipping cookie keepalive.`);
+      process.exit(0);
+    }
     console.error(`SESSION_EXPIRED (${pre.reason})`);
     process.exit(2);
   }

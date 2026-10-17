@@ -70,12 +70,20 @@ reason (and `AIUD_DEBUG_DUMP=1` dumps raw CLI output to `/tmp/aiud-cli-<id>.out`
 plus a child-env check `.envdbg`). Before this, a failing provider just vanished
 from the ingest and from every log line — unfixable blind.
 
-The envelope/dashboard deliberately still omit skipped providers (cards keep
-last-known state rather than flapping red); the truth lives in `collect.log`.
+The envelope deliberately omits skipped providers while `server.js` (`POST /api/ingest`)
+retains the last known `ok`/`partial` entry from `latest.json` (up to 24 h) so
+cards keep their last-known state rather than flapping to `not connected`; the
+truth lives in `collect.log`.
 If a card is stale, the first reflex is `grep skipped collect.log`.
 
 **Why:** the same 2026-08-25 incident was invisible for ~44 h because three
-different code paths did `continue` without a trace.
+different code paths did `continue` without a trace. And on 2026-10-17,
+`@slkiser/opencode-quota@4.8.1`'s 3,000 ms timeout on `claude auth status --json`
+intermittently skipped `anthropic`, causing `server.js` to overwrite `latest.json`
+without `anthropic` and flash `NOT CONNECTED` on an account whose weekly quota
+was simply at 0% until Monday. `collect.mjs` now also queries Anthropic's
+`https://api.anthropic.com/api/oauth/usage` directly using the token refreshed
+by `claude-token.mjs` (falling back to the CLI with its timeout patched to 15 s).
 
 ## `reset_at` is optional when parsing CLI status output — Active
 
@@ -287,6 +295,17 @@ authenticated with the existing Antigravity OAuth (no extra login).
   rows. The collector Dockerfile patches the cap to 12 with a **loud-fail
   guard**: if an upstream upgrade renames the constant, the image build
   fails rather than silently losing windows.
+- **2026-10-17 model-key update & v5 warning:** On 2026-10-06 at 13:30 UTC,
+  Google's `v1internal:fetchAvailableModels` upgraded the Antigravity Claude
+  models from `claude-*-4-5`/`4-6` to `claude-opus-5-5-{high,medium,low}` and
+  `claude-sonnet-5-5-{high,medium,low}`, renamed `gemini-3-pro-image` to
+  `gemini-3.1-flash-image`, and added `gemini-3.6-flash-{high,medium,low}` and
+  `gemini-3.8-flash-tiered`. `collector/Dockerfile` patches `GOOGLE_MODEL_KEYS`
+  in `@slkiser/opencode-quota@4.8.1` (`dist/lib/types.js`) with a loud-fail
+  guard so `Claude` and `G3Image` remain visible. **Do not upgrade
+  `@slkiser/opencode-quota` to `5.x`** without replacing the CLI probe:
+  upstream `5.0.3` deleted `google.js` (`google-antigravity`) and `googleModels`
+  entirely.
 - `google-gemini-cli` was briefly enabled via the `opencode-gemini-auth`
   plugin (2026-08-30, same day) then **reverted** once the antigravity route
   was proven to return the same plan data with credentials already on the

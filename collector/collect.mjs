@@ -4,12 +4,12 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
-import { refreshClaudeTokenIfNeeded } from "./claude-token.mjs";
+import { refreshClaudeTokenIfNeeded, CLAUDE_CREDENTIALS_PATH } from "./claude-token.mjs";
 import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
-import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, isConstantAntigravityReport } from "./quota-parsers.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, isConstantAntigravityReport, parseAnthropicOAuthUsage } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -391,6 +391,38 @@ async function fetchQwenCli() {
     return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey (direct gateway)" };
   }
   return { status: "unavailable", error: "bailian gateway: " + lastError };
+}
+
+const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const ANTHROPIC_BETA_HEADER = "oauth-2025-04-20";
+
+function readClaudeAccessToken(auth) {
+  try {
+    const cred = JSON.parse(readFileSync(CLAUDE_CREDENTIALS_PATH, "utf8"));
+    const tok = cred?.claudeAiOauth?.accessToken || cred?.oauth?.accessToken || cred?.accessToken;
+    if (typeof tok === "string" && tok.trim()) return tok.trim();
+  } catch {}
+  const oa = auth?.anthropic;
+  if (oa?.type === "oauth" && typeof oa.access === "string" && oa.access.trim()) {
+    return oa.access.trim();
+  }
+  return "";
+}
+
+async function fetchAnthropicDirect(auth) {
+  const token = readClaudeAccessToken(auth);
+  if (!token) return { status: "unavailable" };
+  const result = await getJson(ANTHROPIC_USAGE_URL, {
+    Authorization: "Bearer " + token,
+    "anthropic-beta": ANTHROPIC_BETA_HEADER,
+    Accept: "application/json",
+  });
+  if (result.error) {
+    return { status: "error", error: "Anthropic API error " + result.error };
+  }
+  const parsed = parseAnthropicOAuthUsage(result.body);
+  if (!parsed) return { status: "unavailable" };
+  return parsed;
 }
 
 function runStatusCli(providerId) {
@@ -890,6 +922,21 @@ async function main() {
       if (state.anthropic429Until > Date.now()) {
         const mins = Math.ceil((state.anthropic429Until - Date.now()) / 60000);
         providers.anthropic = { status: "error", error: `Anthropic quota probe paused after HTTP 429; retry in ~${mins}m.` };
+        continue;
+      }
+      const directAnth = await fetchAnthropicDirect(auth);
+      if (directAnth.status === "ok") {
+        providers.anthropic = directAnth;
+        if (state.anthropic429Until) {
+          delete state.anthropic429Until;
+          writeState(state);
+        }
+        continue;
+      }
+      if (directAnth.status === "error" && /429/.test(directAnth.error)) {
+        providers.anthropic = directAnth;
+        state.anthropic429Until = Date.now() + ANTHROPIC_429_COOLDOWN_MS;
+        writeState(state);
         continue;
       }
     }

@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { zaiLimitWindow, zaiRemainingPercent, isConstantAntigravityReport } from './quota-parsers.mjs';
+import {
+  zaiLimitWindow,
+  zaiRemainingPercent,
+  isConstantAntigravityReport,
+  parseAnthropicOAuthUsage,
+  extractAntigravityModelEntries,
+  retainSkippedProviders,
+} from './quota-parsers.mjs';
 
 const pct = (percentRemaining, resetAt, name = 'Window') => ({ name, window: 'agy-test', renderType: 'percent', percentRemaining, resetAt });
 
@@ -44,4 +51,76 @@ test('antigravity placeholder detection matches only the constant full report', 
   assert.equal(isConstantAntigravityReport([pct(100, new Date(Date.now() + 7 * 24 * 3600e3).toISOString())]), false);
   assert.equal(isConstantAntigravityReport([]), false);
   assert.equal(isConstantAntigravityReport(undefined), false);
+});
+
+test('parseAnthropicOAuthUsage parses live /api/oauth/usage payload and weekly breakdown note', () => {
+  const payload = {
+    five_hour: { utilization: 0, resets_at: null },
+    seven_day: { utilization: 100, resets_at: '2026-10-19T02:59:59.512302+00:00' },
+    seven_day_breakdown: {
+      rows: [
+        { key: 'claude_code', display_name: 'Claude Code', percent: 97 },
+        { key: 'chat', display_name: 'Chats', percent: 0 },
+        { key: 'cowork', display_name: 'Cowork', percent: 3 },
+      ],
+    },
+  };
+  const parsed = parseAnthropicOAuthUsage(payload);
+  assert.deepEqual(parsed, {
+    status: 'ok',
+    label: 'anthropic',
+    entries: [
+      { name: '5h', renderType: 'percent', percentRemaining: 100, resetAt: undefined, window: '5h' },
+      { name: 'Weekly', renderType: 'percent', percentRemaining: 0, resetAt: '2026-10-19T02:59:59.512Z', window: 'weekly' },
+    ],
+    note: 'weekly split: Claude Code 97% · Cowork 3%',
+  });
+  assert.equal(parseAnthropicOAuthUsage({}), null);
+  assert.equal(parseAnthropicOAuthUsage(null), null);
+});
+
+test('extractAntigravityModelEntries maps Claude 5.5, Gemini 3.1-flash-image, and Gemini 3.6/3.8 Flash', () => {
+  const models = {
+    'gemini-3.1-pro-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
+    'gemini-3.8-flash-tiered': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
+    'claude-opus-5-5-high': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
+    'gemini-3.1-flash-image': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
+    'gpt-oss-120b-medium': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
+  };
+  const entries = extractAntigravityModelEntries(models);
+  assert.deepEqual(entries, [
+    { name: 'G3Pro', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3pro' },
+    { name: 'G3Flash', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3flash' },
+    { name: 'Claude', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-claude' },
+    { name: 'G3Image', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3image' },
+    { name: 'GPT-OSS', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-gptoss' },
+  ]);
+});
+
+test('retainSkippedProviders preserves recent provider state when a collect skips a provider', () => {
+  const now = 1_792_215_643_000;
+  const prevRecord = {
+    receivedAt: now - 10 * 60 * 1000,
+    envelope: {
+      providers: {
+        anthropic: { status: 'ok', label: 'anthropic', entries: [{ name: 'Weekly', renderType: 'percent', percentRemaining: 0, window: 'weekly' }] },
+        openai: { status: 'ok', label: 'openai', entries: [{ name: 'Weekly', renderType: 'percent', percentRemaining: 76, window: 'weekly' }] },
+      },
+    },
+  };
+  const merged = retainSkippedProviders(
+    { openai: { status: 'ok', label: 'openai', entries: [{ name: 'Weekly', renderType: 'percent', percentRemaining: 75, window: 'weekly' }] } },
+    prevRecord,
+    now
+  );
+  assert.equal(merged.openai.entries[0].percentRemaining, 75);
+  assert.equal(merged.anthropic.entries[0].percentRemaining, 0);
+
+  // Stale prevRecord (> 24h old) is not carried forward
+  const staleMerged = retainSkippedProviders(
+    { openai: { status: 'ok', label: 'openai', entries: [] } },
+    { ...prevRecord, receivedAt: now - 25 * 3600 * 1000 },
+    now
+  );
+  assert.equal(staleMerged.anthropic, undefined);
 });

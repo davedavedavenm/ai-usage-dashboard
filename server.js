@@ -308,6 +308,19 @@ const server = http.createServer((req, res) => {
       }
       try {
         const receivedAt = Date.now();
+        let prevRecord = null;
+        try {
+          prevRecord = JSON.parse(fs.readFileSync(LATEST, "utf8"));
+        } catch {}
+        const prevProviders = prevRecord && prevRecord.envelope && prevRecord.envelope.providers;
+        const prevAt = prevRecord && Number(prevRecord.receivedAt);
+        if (prevProviders && typeof prevProviders === "object" && Number.isFinite(prevAt) && (receivedAt - prevAt) <= 24 * 60 * 60 * 1000) {
+          for (const [id, prov] of Object.entries(prevProviders)) {
+            if (!parsed.providers[id] && prov && (prov.status === "ok" || prov.status === "partial")) {
+              parsed.providers[id] = prov;
+            }
+          }
+        }
         const record = { receivedAt, envelope: parsed };
         const tmp = LATEST + ".tmp";
         fs.writeFileSync(tmp, JSON.stringify(record));
