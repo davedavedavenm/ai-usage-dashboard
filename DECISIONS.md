@@ -259,8 +259,9 @@ account — the monthly usage API above is the only live percentage source):
 Verification after deploy: `/api/quota` →
 `alibaba-coding-plan` = `This month 92% remaining, reset 2026-10-21T16:00Z,
 note "token-plan usage via AccessKey (direct gateway)"` (2026-09-24T06:59Z
-collect). The percentage moves with real usage — it fell 94.7 → 92 within an
-hour of agent traffic on the plan.
+collect; the card note now names the monthly window and adds a used row —
+see the 2026-10-23 entry). The percentage moves with real usage — it fell
+94.7 → 92 within an hour of agent traffic on the plan.
 
 Auto-refresh fix (2026-09-25): When the console token expired, the gateway
 returned `{code: "200", data: {success: false, errorCode: "BailianGateway.Login.NotLogined"}}`.
@@ -283,12 +284,13 @@ credential actually appears in `auth.json`.
 ## Gemini plan windows come from the Antigravity probe — Active (2026-08-30)
 
 Dave has a **Gemini AI subscription, not API tokens**. The whole plan's quota
-windows (G3Pro, G3Flash, Claude, G3Image, GPTOSS models — each its own
-5-hour allowance) are returned by the `google-antigravity` probe, driven by
+windows (at the time: G3Pro, G3Flash, Claude, G3Image, GPTOSS models — each its
+own 5-hour allowance; see the 2026-10-23 entry for the current Antigravity set)
+are returned by the `google-antigravity` probe, driven by
 the `googleModels` key in `~/.config/opencode/opencode-quota/quota-toast.json`,
 authenticated with the existing Antigravity OAuth (no extra login).
 
-- `googleModels` valid ids: G4ARGON, G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS (`G4ARGON` pre-wired for `gemini-4-argon*` / `gemini-4-*`).
+- `googleModels` valid ids: G4ARGON, G3PRO, G3FLASH, CLAUDE, G3IMAGE, GPTOSS (`G4ARGON` pre-wired for `gemini-4-argon*` / `gemini-4-*`; the collector drops GPTOSS from the card and alerts as of 2026-10-23).
 - The quota CLI hard-caps status output at 2 live entries
   (`STATUS_LIVE_ENTRY_LIMIT` in quota-status.js — not configurable, and
   `--json` lacks entries entirely), so more than 2 models silently drop
@@ -422,7 +424,48 @@ though Dave has an active Google AI Pro subscription and Gemini is fully functio
 in real life. The collector now publishes the live quota report (`status: "ok"`)
 from `opencode-quota` with all four models (G3Pro, G3Flash, Claude, GPT-OSS) at 100%,
 annotated with "Google AI Pro · live quota", so the dashboard card renders live
-and healthy.
+and healthy. (The model set has since changed: GPT-OSS was removed from the
+card on 2026-10-23 — see below.)
+
+## Antigravity card drops GPT-OSS; G4Argon is an unavailable row until Google re-links entitlement — Active (2026-10-23)
+
+Dave asked for the Antigravity card to show Claude, G3Flash and G4Argon and to
+stop showing GPT-OSS. `filterAntigravityDisplayEntries()` drops GPT-OSS at the
+display boundary, and `agy-gptoss` is no longer a durable rollover window, so
+GPT-OSS never reaches the card or the alert code even though the host
+`googleModels` config still lists `GPTOSS`.
+
+G4Argon (Gemini 4 Argon, launched in Antigravity on 2026-10-13 for Google AI
+Pro/Ultra subscribers) is **not in this account's
+`v1internal:fetchAvailableModels` response**. `loadCodeAssist` still answers
+`currentTier: "free-tier"` while naming `paidTier: "g1-pro-tier"` and offering
+an upgrade. Raw probe on 2026-10-23:
+
+- 23 models returned; no `gemini-4-argon` and no `gemini-4-*` key.
+- Claude 5.5 (`claude-opus-5-5-*` / `claude-sonnet-5-5-*`) and
+  `gpt-oss-120b-medium` are present; `gemini-3-flash` and
+  `gemini-3.1-flash-image` carry the current 40% buckets.
+- User-Agents `antigravity/1.11.9`, `1.12.0`, `1.13.0`, `2.0.0`, `2.1.0` all
+  return the same 23-model list.
+
+This is the 2026-09-22 entitlement desync, not a client, key or login problem;
+re-adding the account does not repair it. The card therefore shows one
+`G4Argon` value row — `not offered (free-tier)` — and a note naming the
+`free-tier`/`g1-pro-tier` contradiction. Do **not** omit G4Argon silently and
+do **not** invent a percentage. When Google re-links the subscription and the
+API lists `gemini-4-argon*`, `opencode-quota` (the host config already has
+`G4ARGON`) returns it and the real percentage replaces the value row.
+
+## Qwen card states its single monthly window's used percentage — Active (2026-10-23)
+
+The token-plan usage API returns only `per1MonthPercentage` and
+`per1MonthResetTime` for this account. Raw response on 2026-10-23:
+`per1MonthPercentage: 0`, reset `2026-11-21T16:00Z`. The card shows the
+remaining hero (100%) plus a `Used this month 0%` value row and the note
+"Monthly token plan · Alibaba reports one monthly window". A full 100% bar is
+a real 0%-used reading, not a placeholder; no 5 h/weekly windows exist to show
+and none are invented. `qwenEntriesFromUsage()` still parses any 5 h/weekly/
+monthly windows if Alibaba restores them.
 
 ## Z.ai limit rows are keyed by `unit`, not by the `type` name — Active (2026-09-21)
 
@@ -574,10 +617,11 @@ are preserved. No retired cookie/session notices are reintroduced.
 Dave can make maximum use of AI subscription allowances before they expire, the
 collector evaluates the longest durable allowance window **that still has
 allowance** per provider (monthly for OpenCode Go and Qwen; weekly for Claude,
-OpenAI, Z.ai; Antigravity's `agy-claude`/`agy-gptoss` buckets are treated as
-weekly because live resets are multi-day, while `agy-g3flash`/`agy-g3image` are
-5-hour and excluded) and dispatches Telegram warnings (and configured webhooks)
-at T-24h and T-12h before reset when allowance remains (`percentRemaining > 0`).
+OpenAI, Z.ai; Antigravity's `agy-claude` bucket is treated as weekly because its
+live reset is multi-day, while `agy-g3flash`/`agy-g3image` are 5-hour and
+excluded; GPT-OSS is not an Antigravity alert window) and dispatches Telegram
+warnings (and configured webhooks) at T-24h and T-12h before reset when
+allowance remains (`percentRemaining > 0`).
 If the longest window is exhausted, a shorter durable window with remaining
 quota can warn instead (e.g. OpenCode Go monthly 0% -> weekly 10%). If 0%
 remains in every durable window, no warning is sent (already exhausted).
@@ -646,13 +690,14 @@ cron line were replaced by a direct `keepalive.mjs` entry (2026-08-26).
 ## Gemini allowance defaults to G3Flash (non-Claude) — Active (2026-09-05)
 
 Dave uses Google's Gemini AI plan. In the `google-antigravity` probe, the quota
-CLI returns multiple model windows (G3Flash, G3Pro, Claude, GPT-OSS). When
-Claude or GPT-OSS hits 0%, the card previously selected Claude as the "worst"
-window, causing the Gemini card to flash red/critical and report 0% allowance
-even when G3Flash was at 100%. The hero number, card status glow, sparkline
-representative point, and allowance threshold alerts now prioritize
-**G3Flash** (and non-Claude/non-GPT-OSS Gemini models). Secondary models
-remain fully visible in the sub-meters below the hero number.
+CLI returned multiple model windows (G3Flash, G3Pro, Claude, GPT-OSS at the
+time). When Claude or GPT-OSS hit 0%, the card previously selected Claude as the
+"worst" window, causing the Gemini card to flash red/critical and report 0%
+allowance even when G3Flash was at 100%. The hero number, card status glow,
+sparkline representative point, and allowance threshold alerts prioritize
+**G3Flash** (and non-Claude Gemini models). Secondary models remain fully
+visible in the sub-meters below the hero number. GPT-OSS is no longer an
+Antigravity card or alert window (2026-10-23 entry).
 
 ## On-demand sync via `/api/collect` trigger — Active (2026-09-05)
 

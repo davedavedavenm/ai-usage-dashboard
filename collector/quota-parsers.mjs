@@ -213,18 +213,6 @@ const ANTIGRAVITY_MODEL_SPECS = [
     ],
     prefixRe: /^gemini-3(?:\.\d+)?-(?:pro|flash)-image/i,
   },
-  {
-    id: "GPTOSS",
-    name: "GPT-OSS",
-    window: "agy-gptoss",
-    keys: [
-      "gpt-oss-120b-medium",
-      "gpt-oss-120b-high",
-      "gpt-oss-120b-low",
-      "gpt-oss-120b",
-    ],
-    prefixRe: /^gpt-oss-/i,
-  },
 ];
 
 export function extractAntigravityModelEntries(modelsMap) {
@@ -253,6 +241,35 @@ export function extractAntigravityModelEntries(modelsMap) {
     });
   }
   return entries;
+}
+
+// GPT-OSS is not an Antigravity model Dave uses. The host quota config may
+// still ask the CLI for it, so drop it at the display boundary before the
+// card and alert code see it.
+export function filterAntigravityDisplayEntries(entries) {
+  return (entries || []).filter(e => e && !/gpt-?oss/i.test(String(e.name || "")));
+}
+
+// G4Argon launched in Antigravity on 2026-10-13 for Google AI Pro/Ultra
+// subscribers. When Google withholds it (this account still answers
+// free-tier), show one honest row instead of omitting the model or inventing
+// a percentage. Google's entitlement sync is the only fix; a login is not.
+export function antigravityG4ArgonUnavailable(plan) {
+  const tier = plan?.ok && typeof plan.tier === "string" ? plan.tier : "";
+  const paid = plan?.ok && typeof plan.paidTier === "string" ? plan.paidTier : "";
+  const contradiction = Boolean(tier && paid && tier !== paid);
+  const value = contradiction || tier === "free-tier"
+    ? `not offered (${tier || "free-tier"})`
+    : "not offered";
+  const note = contradiction
+    ? `Google answers ${tier} while naming ${paid} as the paid tier - G4Argon needs AI Pro/Ultra; entitlement desync, not a login problem`
+    : tier
+      ? `Google answers ${tier}; G4Argon is not in this account's Antigravity model list`
+      : "G4Argon is not in this account's Antigravity model list";
+  return {
+    entry: { name: "G4Argon", renderType: "value", value, window: "agy-g4argon" },
+    note,
+  };
 }
 
 const MAX_RETAIN_AGE_MS = 24 * 60 * 60 * 1000;

@@ -78,10 +78,12 @@ Percentages come from the Alibaba token-plan usage API, called directly by
 the collector with the console token that `bailian-cli` maintains from an
 Alibaba Cloud AccessKey stored in `data/bailian/config.json` (gitignored,
 same handling as `settings.json`). bl self-refreshes that token from the
-AccessKey, so this source survives console-session expiry — **no browser, no
+AccessKey, so this source survives console-session expiry - **no browser, no
 periodic login**. Since 2026-09-24 Alibaba reports a **monthly** usage window
 which bl 2.0.1's own `usage token-plan` cannot parse (it prints `{}`), hence
-the direct gateway call — see DECISIONS.md.
+the direct gateway call - see DECISIONS.md. The card shows percent remaining
+plus a **Used this month** row; a full 100% bar means the API reported 0% used,
+not a placeholder.
 
 One-time setup (on the stack host):
 
@@ -108,7 +110,7 @@ If the AccessKey source fails, the collector degrades through the legacy
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` |
 | Z.ai | direct quota API + console subscription API (`biz/subscription/list`, for the plan renewal date) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
-| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Pro, G3Flash, …) | `opencode auth login` → Google (Antigravity) |
+| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Flash, Claude, G3Image; G4Argon when Google offers it, otherwise an explicit unavailable row). GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 | Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
 
@@ -121,7 +123,7 @@ glow.
 Configured via the Settings tab (Telegram bot token/chat ID and optional webhook URL):
 
 - **Low-allowance warnings**: Staged notifications when the tightest window hits the configured threshold (default 15%) and when it hits 0% (exhausted).
-- **Reset warnings**: Sent **24 hours** and **12 hours** before a durable allowance window resets. The collector picks the longest window that still has allowance (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai; Antigravity's Claude/GPT-OSS buckets reset on a multi-day/weekly cadence, while its Gemini flash/image buckets are 5-hour and excluded). Fires only when allowance remains (`> 0%`) so you can use it before it expires. If the longest window is exhausted, a shorter durable window with remaining quota can still trigger a warning.
+- **Reset warnings**: Sent **24 hours** and **12 hours** before a durable allowance window resets. The collector picks the longest window that still has allowance (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai; Antigravity's Claude bucket resets on a multi-day/weekly cadence, while its Gemini flash/image buckets are 5-hour and excluded; GPT-OSS is not an Antigravity card or alert window). Fires only when allowance remains (`> 0%`) so you can use it before it expires. If the longest window is exhausted, a shorter durable window with remaining quota can still trigger a warning.
 
 ## API
 

@@ -7,6 +7,8 @@ import {
   isConstantAntigravityReport,
   parseAnthropicOAuthUsage,
   extractAntigravityModelEntries,
+  filterAntigravityDisplayEntries,
+  antigravityG4ArgonUnavailable,
   retainSkippedProviders,
   isoFrom,
 } from './quota-parsers.mjs';
@@ -48,7 +50,7 @@ test('antigravity placeholder detection matches only the constant full report', 
   // server-stamped rate-limit reset, or a single window.
   assert.equal(isConstantAntigravityReport([pct(92, reset, 'G3Pro'), pct(100, reset, 'G3Flash')]), false);
   assert.equal(isConstantAntigravityReport([pct(100, reset), pct(100, new Date(Date.now() + 4 * 3600e3).toISOString())]), false);
-  assert.equal(isConstantAntigravityReport([pct(0, reset, 'Claude'), pct(0, reset, 'GPT-OSS')]), false);
+  assert.equal(isConstantAntigravityReport([pct(0, reset, 'Claude'), pct(0, reset, 'G3Flash')]), false);
   assert.equal(isConstantAntigravityReport([pct(100, reset)]), false);
   assert.equal(isConstantAntigravityReport([pct(100, new Date(Date.now() + 7 * 24 * 3600e3).toISOString())]), false);
   assert.equal(isConstantAntigravityReport([]), false);
@@ -97,8 +99,33 @@ test('extractAntigravityModelEntries maps G4Argon, Claude 5.5, Gemini 3.1-flash-
     { name: 'G3Flash', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3flash' },
     { name: 'Claude', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-claude' },
     { name: 'G3Image', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3image' },
-    { name: 'GPT-OSS', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-gptoss' },
   ]);
+});
+
+test('antigravity display drops GPT-OSS even when the host probe returns it', () => {
+  const entries = [
+    { name: 'Claude', renderType: 'percent', percentRemaining: 0, window: 'agy-claude' },
+    { name: 'GPT-OSS', renderType: 'percent', percentRemaining: 0, window: 'agy-gptoss' },
+    { name: 'gpt-oss-120b-medium', renderType: 'percent', percentRemaining: 50, window: 'agy-gptoss' },
+  ];
+  assert.deepEqual(filterAntigravityDisplayEntries(entries).map(e => e.name), ['Claude']);
+  assert.deepEqual(filterAntigravityDisplayEntries(undefined), []);
+});
+
+test('G4Argon unavailable row names the verified entitlement contradiction', () => {
+  const full = antigravityG4ArgonUnavailable({ ok: true, tier: 'free-tier', paidTier: 'g1-pro-tier' });
+  assert.deepEqual(full.entry, {
+    name: 'G4Argon',
+    renderType: 'value',
+    value: 'not offered (free-tier)',
+    window: 'agy-g4argon',
+  });
+  assert.match(full.note, /free-tier.*g1-pro-tier/);
+  assert.match(full.note, /not a login problem/);
+
+  const unknown = antigravityG4ArgonUnavailable({ ok: false });
+  assert.equal(unknown.entry.value, 'not offered');
+  assert.match(unknown.note, /not in this account's Antigravity model list/);
 });
 
 test('retainSkippedProviders preserves recent provider state when a collect skips a provider', () => {

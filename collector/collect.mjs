@@ -9,7 +9,7 @@ import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
-import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom } from "./quota-parsers.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom, filterAntigravityDisplayEntries, antigravityG4ArgonUnavailable } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -386,6 +386,23 @@ function qwenEntriesFromUsage(usageObj) {
   return entries;
 }
 
+// The token-plan API currently publishes one monthly window. Show the used
+// fraction alongside the remaining hero so a full 100% bar reads as "unused",
+// not as a placeholder, and name the single window in the note.
+const QWEN_MONTHLY_NOTE = "Monthly token plan · Alibaba reports one monthly window";
+
+function qwenWithUsage(entries) {
+  const monthly = entries.find(e => e.window === "monthly" && typeof e.percentRemaining === "number");
+  if (!monthly) return { status: "ok", label: "Qwen", entries, note: "Token-plan usage via AccessKey gateway" };
+  const used = Math.max(0, Math.min(100, 100 - monthly.percentRemaining));
+  return {
+    status: "ok",
+    label: "Qwen",
+    entries: [...entries, { name: "Used this month", renderType: "value", value: Math.round(used) + "%" }],
+    note: entries.length === 1 ? QWEN_MONTHLY_NOTE : "Token-plan usage via AccessKey gateway",
+  };
+}
+
 function runBlTokenPlan() {
   try {
     return execFileSync(BL_BIN, ["usage", "token-plan", "--output", "json"], {
@@ -414,7 +431,7 @@ async function fetchQwenCli() {
           const parsed = JSON.parse(out);
           if (parsed && !parsed.error) {
             const entries = qwenEntriesFromUsage(parsed);
-            if (entries.length) return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey" };
+            if (entries.length) return qwenWithUsage(entries);
           }
         } catch {}
       }
@@ -432,7 +449,7 @@ async function fetchQwenCli() {
     }
     const entries = qwenEntriesFromUsage(r.usage);
     if (!entries.length) { lastError = "usage response has no windows"; break; }
-    return { status: "ok", label: "Qwen", entries, note: "token-plan usage via AccessKey (direct gateway)" };
+    return qwenWithUsage(entries);
   }
   return { status: "unavailable", error: "bailian gateway: " + lastError };
 }
@@ -520,7 +537,7 @@ function parseStatus(text) {
 // dashboard can sort and dedupe them.
 const AGY_MODEL_WINDOWS = {
   "G4Argon": "agy-g4argon", "G3Pro": "agy-g3pro", "G3Flash": "agy-g3flash", "Claude": "agy-claude",
-  "G3Image": "agy-g3image", "GPT-OSS": "agy-gptoss",
+  "G3Image": "agy-g3image",
 };
 
 function entriesFromStatusSection(section) {
@@ -657,10 +674,10 @@ function windowDurationHours(entry) {
   if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
   if (win === "daily" || /day/i.test(name)) return 24;         // 24h
   // Antigravity publishes per-model buckets. The probe sends no duration, but
-  // live data shows Claude/GPT-OSS reset on a multi-day (weekly) cadence while
+  // live data shows Claude resets on a multi-day (weekly) cadence while
   // G3Flash/G3Image are 5-hour. Classify by the stable window id so the durable
-  // buckets can receive rollover warnings.
-  if (/^agy-(claude|gpt-?oss)$/.test(win)) return 24 * 7;      // 168h
+  // bucket can receive rollover warnings. GPT-OSS is not displayed or alerted.
+  if (/^agy-claude$/.test(win)) return 24 * 7;                 // 168h
   return 5; // 5h, rolling, agy-g3flash/g3image, etc.
 }
 
@@ -1028,8 +1045,17 @@ async function main() {
       skipped[id] = "no usable entries in CLI output";
       continue;
     }
-    if (id === "google-antigravity" && isConstantAntigravityReport(r.entries)) {
-      r.note = "Google AI Pro · live quota";
+    if (id === "google-antigravity") {
+      r.entries = filterAntigravityDisplayEntries(r.entries);
+      if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
+        const plan = await probeGooglePlan();
+        const unavailable = antigravityG4ArgonUnavailable(plan);
+        r.entries.push(unavailable.entry);
+        r.note = [r.note, unavailable.note].filter(Boolean).join(" · ");
+      }
+      if (isConstantAntigravityReport(r.entries)) {
+        r.note = [r.note, "Google AI Pro · live quota"].filter(Boolean).join(" · ");
+      }
     }
     providers[id] = r;
     if (id === "anthropic" && r.status === "error" && /429/.test(r.error)) {

@@ -152,8 +152,11 @@
   .mini .mpct.load { color: var(--green); }
   .mini .mpct.low { color: var(--amber); }
   .mini .mpct.crit { color: var(--red); }
-  .mini.loadrow { grid-template-columns: minmax(0, 1fr) 52px auto; }
-  .mini.loadrow .mtag { overflow: hidden; text-overflow: ellipsis; }
+  .mini.loadrow { grid-template-columns: minmax(0, 1fr) 52px auto; grid-template-areas: "name pct state" "meter meter meter"; row-gap: 6px; }
+  .mini.loadrow .mtag { grid-area: name; overflow: hidden; text-overflow: ellipsis; }
+  .mini.loadrow .mpct { grid-area: pct; }
+  .mini.loadrow .mreset { grid-area: state; }
+  .mini.loadrow .mmeter { grid-area: meter; }
   .mini .mreset { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .card.state-crit { box-shadow: 0 0 22px rgba(242, 93, 93, 0.25), inset 0 0 0 1px rgba(242, 93, 93, 0.35); }
   @keyframes pulse { 50% { opacity: .55; } }
@@ -525,12 +528,14 @@ function cardHTML(id, prov) {
           <span class="mtag">${esc(e.name)}</span>
           <span class="mpct ${lcls}">${Math.round(u)}%</span>
           <span class="mreset">${esc(e.label)}</span>
+          <span class="mmeter ${lcls}"><i style="width:${u}%"></i></span>
         </div>`;
       }).join("")}</div>`;
     }
     if (values.length) {
       body += values.map(e => {
-        const isFallback = id === "alibaba-coding-plan" && /quota available/i.test(String(e.value || ""));
+        const isFallback = (id === "alibaba-coding-plan" && /quota available/i.test(String(e.value || ""))) ||
+          (id === "google-antigravity" && /not offered/i.test(String(e.value || "")));
         return `<div class="vline${isFallback ? " degrade" : ""}"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`;
       }).join("");
     }

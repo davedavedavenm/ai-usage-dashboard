@@ -199,7 +199,7 @@ test('longestPeriodEntries falls back to a shorter window when the longest is ex
   assert.equal(longest[0].blocked[0].resetAt, '2026-09-20T18:00:00Z');
 });
 
-test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible', async () => {
+test('rollover alerts: Antigravity Claude is the durable window', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
@@ -210,7 +210,6 @@ test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible',
       entries: [
         { name: 'G3Flash', window: 'agy-g3flash', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 80 },
         { name: 'Claude', window: 'agy-claude', resetAt, renderType: 'percent', percentRemaining: 50 },
-        { name: 'GPT-OSS', window: 'agy-gptoss', resetAt, renderType: 'percent', percentRemaining: 50 },
       ],
     },
   };
@@ -219,6 +218,24 @@ test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible',
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /Gemini · Antigravity · Claude/);
   assert.match(h.calls[0].body.text, /50%<\/b> allowance remaining before reset/);
+});
+
+test('rollover alerts: GPT-OSS is not a durable Antigravity window', async () => {
+  const h = harness();
+  const state = {};
+  const cfg = { ...config, webhookUrl: '' };
+  const resetAt = '2026-09-21T06:00:00Z';
+  const data = {
+    'google-antigravity': {
+      label: 'google-antigravity',
+      entries: [
+        { name: 'GPT-OSS', window: 'agy-gptoss', resetAt, renderType: 'percent', percentRemaining: 50 },
+      ],
+    },
+  };
+  const t20 = new Date('2026-09-20T10:00:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, t20);
+  assert.equal(h.calls.length, 0);
 });
 
 test('rollover alerts: OpenCode Go weekly warning names the limited monthly cap', async () => {
