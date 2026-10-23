@@ -438,6 +438,27 @@ the provider to `partial`. `zaiRemainingPercent()` prefers the exact
 `remaining`/`usage` numbers over `percentage`, which is the share **used** floored
 to a whole percent (live row: 1960/2000 = 98% left while `percentage` says "1").
 
+## Z.ai billing renewal comes from the subscription API — Active (2026-10-23)
+
+The card could not answer "when does the plan renew?" — the quota endpoint
+publishes only the 5-hour and weekly allowance windows, and `unit` 3/6 says
+nothing about billing. The console endpoint
+`GET https://api.z.ai/api/biz/subscription/list` answers to the same
+coding-plan API key with the purchased subscription (`status`, `productName`,
+`nextRenewTime`, `billingCycle`, `autoRenew`). `fetchZai()` reads it in the
+same pass and publishes a `Plan renewal` value row (`22 Sep 2027 · annual`);
+if that second call fails the row is omitted but a live quota card is never
+downgraded.
+
+Live check 2026-10-23: Dave's GLM Coding Lite is **annual**
+(`billingCycle: "annually"`, `nextRenewTime: "2027-09-22"`, `autoRenew: 1`),
+while usage stays 5-hour + weekly. There is no monthly quota reset to draw:
+show the weekly usage reset and the annual billing renewal, and never invent
+a monthly window. The card hero tie-break now prefers a window that carries a
+reset when percentages are equal, so Z.ai leads with `This week` and its
+reset instead of the rolling 5-hour row with no reset time; windows without a
+reset render as `rolling`.
+
 ## CDP over the compose network needs a Host:localhost override — Active (2026-08-30)
 
 Chromium's DevTools endpoints (HTTP and WebSocket) reject requests whose
@@ -474,7 +495,7 @@ for fresh installs, and khpi5's `.env` pins LAN + tailnet.
 | Claude (anthropic) | opencode-quota CLI live probe | `~/.claude/.credentials.json` on khpi5 | **automatic**: `claude-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rate-limit/backoff state in `~/.claude/.oauth-refresh.json`); manual re-login only if refresh_token itself expires — SSH tunnel flow in README |
 | ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
 | Gemini/Antigravity | opencode-quota CLI (`google-antigravity`, `googleModels` = plan model windows) | `~/.config/opencode/antigravity-accounts.json` | n/a while account valid (refresh handled inside the plugin's account store; manual re-login via `opencode auth login` → Google (Antigravity) if it ages out) |
-| Z.ai | direct quota API | `auth.json` API key | n/a (long-lived key) |
+| Z.ai | direct quota API (`monitor/usage/quota/limit`) + console subscription API (`biz/subscription/list`) | `auth.json` API key | n/a (long-lived key); billing renewal date read from the subscription endpoint — live plan is **annual**, next renewal 2027-09-22 |
 | OpenCode Go | direct usage API | `auth.json` API key | **manual** — key carries an expiry date; renew via OpenCode Console + `opencode auth login -p opencode-go` on khpi5 (see note below) |
 | Qwen (Alibaba Token Plan) | token-plan usage API via `bailian-cli` (real percentages); token-plan key probe fallback | main-account AccessKey at `data/bailian/config.json` (self-refreshing console token) + `auth.json` key | **automatic** — token refresh via the AccessKey; browser path retired 2026-09-14 |
 

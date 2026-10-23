@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   zaiLimitWindow,
   zaiRemainingPercent,
+  parseZaiSubscription,
   isConstantAntigravityReport,
   parseAnthropicOAuthUsage,
   extractAntigravityModelEntries,
@@ -125,4 +126,49 @@ test('retainSkippedProviders preserves recent provider state when a collect skip
     now
   );
   assert.equal(staleMerged.anthropic, undefined);
+});
+
+test('zai subscription parser reads the live annual renewal shape', () => {
+  const body = {
+    code: 200,
+    success: true,
+    data: [{
+      productName: 'GLM Coding Lite',
+      status: 'VALID',
+      billingCycle: 'annually',
+      autoRenew: 1,
+      nextRenewTime: '2027-09-22',
+      currentRenewTime: '2026-09-22',
+    }],
+  };
+  assert.deepEqual(parseZaiSubscription(body), {
+    productName: 'GLM Coding Lite',
+    nextRenewDate: '2027-09-22',
+    billingCycle: 'annually',
+    autoRenew: true,
+  });
+});
+
+test('zai subscription parser picks the active row and drops any time from the date', () => {
+  const body = {
+    data: [
+      { productName: 'GLM Coding Lite', status: 'EXPIRED', nextRenewTime: '2025-09-22' },
+      { productName: 'GLM Coding Lite', status: 'valid', billingCycle: 'annually', autoRenew: 0, nextRenewTime: '2027-09-22 04:51:32' },
+    ],
+  };
+  assert.deepEqual(parseZaiSubscription(body), {
+    productName: 'GLM Coding Lite',
+    nextRenewDate: '2027-09-22',
+    billingCycle: 'annually',
+    autoRenew: false,
+  });
+});
+
+test('zai subscription parser returns null when no usable active renewal exists', () => {
+  assert.equal(parseZaiSubscription(null), null);
+  assert.equal(parseZaiSubscription({}), null);
+  assert.equal(parseZaiSubscription({ data: [] }), null);
+  assert.equal(parseZaiSubscription({ data: [{ status: 'VALID' }] }), null);
+  assert.equal(parseZaiSubscription({ data: [{ status: 'VALID', nextRenewTime: 'not-a-date' }] }), null);
+  assert.equal(parseZaiSubscription({ data: [{ status: 'EXPIRED', nextRenewTime: '2027-09-22' }] }), null);
 });

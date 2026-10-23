@@ -9,7 +9,7 @@ import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
-import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, isConstantAntigravityReport, parseAnthropicOAuthUsage } from "./quota-parsers.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +34,7 @@ function envValue(lines, name) {
 const AUTH_FILE = process.env.AIUD_AUTH_FILE || join(homedir(), ".local", "share", "opencode", "auth.json");
 const INGEST_URL = process.env.AIUD_INGEST_URL || "http://127.0.0.1:8099/api/ingest";
 const ZAI_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
+const ZAI_SUB_URL = "https://api.z.ai/api/biz/subscription/list";
 const GO_URL = "https://opencode.ai/zen/go/v1/usage";
 const RADEON_LOAD_URL = process.env.AIUD_RADEON_LOAD_URL || "https://developer.amd.com.cn/radeon/api/tokenfactory/load";
 const CLI_BIN = process.env.AIUD_CLI_BIN || join(HERE, "node_modules", ".bin", "opencode-quota");
@@ -116,14 +117,32 @@ function pctEntry(name, percentRemaining, resetAtIso, window) {
   return { name, renderType: "percent", percentRemaining: Math.round(percentRemaining), resetAt: resetAtIso, window };
 }
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The subscription endpoint returns a local calendar date, so format the
+// YYYY-MM-DD text directly instead of passing it through Date (which would
+// shift the day for anyone west of the console's timezone).
+function formatZaiRenewal(sub) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sub.nextRenewDate || "");
+  const date = m ? `${Number(m[3])} ${MONTH_NAMES[Number(m[2]) - 1] || m[2]} ${m[1]}` : sub.nextRenewDate;
+  const cycle = sub.billingCycle === "annually" ? "annual" : sub.billingCycle;
+  const parts = [date];
+  if (cycle) parts.push(cycle);
+  if (!sub.autoRenew) parts.push("auto-renew off");
+  return parts.join(" · ");
+}
+
 async function fetchZai(auth) {
   const key = apiKey(auth, "zai-coding-plan");
   if (!key || typeof key === "object") return { status: "unavailable" };
-  const result = await getJson(ZAI_URL, {
-    Authorization: key,
-    "User-Agent": "OpenCode-Quota-Toast/1.0",
-    "Content-Type": "application/json",
-  });
+  const [result, subResult] = await Promise.all([
+    getJson(ZAI_URL, {
+      Authorization: key,
+      "User-Agent": "OpenCode-Quota-Toast/1.0",
+      "Content-Type": "application/json",
+    }),
+    getJson(ZAI_SUB_URL, { Authorization: key, Accept: "application/json" }),
+  ]);
   if (result.error) return { status: "error", error: "Z.ai API error " + result.error };
   const limits = result.body?.data?.limits ?? result.body?.limits;
   if (!Array.isArray(limits) || !limits.length) return { status: "error", error: "Z.ai API error: no limits in response" };
@@ -152,8 +171,14 @@ async function fetchZai(auth) {
   const planRow = typeof result.body?.data?.level === "string"
     ? [{ name: "Plan level", renderType: "value", value: result.body.data.level }]
     : [];
+  // Billing renewal is a bonus: a failed subscription call must not blank a
+  // card whose live quota windows were read fine.
+  const renewal = subResult && !subResult.error ? parseZaiSubscription(subResult.body) : null;
+  const renewalRow = renewal
+    ? [{ name: "Plan renewal", renderType: "value", value: formatZaiRenewal(renewal) }]
+    : [];
   const missing = unmapped.length ? " · unmapped limit rows: " + unmapped.join(", ") : "";
-  return { status: "ok", label: "Z.ai", entries: [...planRow, ...entries], note: "windows: " + entries.map(e => e.name).join(", ") + missing };
+  return { status: "ok", label: "Z.ai", entries: [...planRow, ...renewalRow, ...entries], note: "windows: " + entries.map(e => e.name).join(", ") + missing };
 }
 
 async function fetchOpenCodeGo(auth) {

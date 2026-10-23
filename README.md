@@ -106,7 +106,7 @@ If the AccessKey source fails, the collector degrades through the legacy
 |---|---|---|
 | Claude | `anthropic` (via opencode-quota CLI) | Claude Code OAuth (`claude login`) |
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` |
-| Z.ai | direct quota API | auth.json `zai-coding-plan` API key |
+| Z.ai | direct quota API + console subscription API (`biz/subscription/list`, for the plan renewal date) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Pro, G3Flash, …) | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |

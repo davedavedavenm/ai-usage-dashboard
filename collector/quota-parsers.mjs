@@ -18,6 +18,28 @@ export function zaiLimitWindow(limit) {
   return ZAI_UNIT_WINDOWS[Number(limit?.unit)] || null;
 }
 
+// Z.ai's quota endpoint publishes usage windows only; the plan's billing date
+// lives on the console subscription endpoint and answers to the same coding
+// key. One row per purchased subscription — only a VALID row with a renewal
+// date is usable. Keep the date as YYYY-MM-DD text: the console returns local
+// dates, and parsing them into a Date would shift the day across timezones.
+export function parseZaiSubscription(body) {
+  const rows = Array.isArray(body?.data) ? body.data : [];
+  const active = rows.find(row => {
+    if (!row || String(row.status || "").toUpperCase() !== "VALID") return false;
+    return /^\d{4}-\d{2}-\d{2}/.test(String(row.nextRenewTime || ""));
+  });
+  if (!active) return null;
+  const productName = typeof active.productName === "string" ? active.productName.trim() : "";
+  const billingCycle = typeof active.billingCycle === "string" ? active.billingCycle.trim().toLowerCase() : "";
+  return {
+    productName: productName || null,
+    nextRenewDate: String(active.nextRenewTime).slice(0, 10),
+    billingCycle: billingCycle || null,
+    autoRenew: active.autoRenew === true || Number(active.autoRenew) === 1,
+  };
+}
+
 // Percentage of the window still AVAILABLE. The API's `percentage` field is the
 // share USED, floored to a whole percent; when a row carries its raw numbers
 // those are exact, so they win (Z.ai "lite" weekly: 39 of 2000 used reads

@@ -476,7 +476,13 @@ function cardHTML(id, prov) {
                percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`)) ||
                percents[0];
       } else {
-        hero = percents.reduce((a, b) => a.percentRemaining <= b.percentRemaining ? a : b);
+        hero = percents.reduce((a, b) => {
+          if (a.percentRemaining !== b.percentRemaining) return a.percentRemaining < b.percentRemaining ? a : b;
+          // A tied window with a real reset makes a more useful hero than one
+          // whose provider sent no reset time (Z.ai's rolling 5-hour row).
+          if (!!a.resetAt !== !!b.resetAt) return a.resetAt ? a : b;
+          return a;
+        });
       }
       const others = percents.filter(e => e !== hero);
       const p = hero.percentRemaining;
@@ -484,7 +490,9 @@ function cardHTML(id, prov) {
         <div class="bignum">${Math.round(p)}<small>%</small></div>
         <div class="heroside">
           <span class="wtag2">${windowTag(hero.window, hero.name)}</span>
-          <div class="hreset2">resets in <b class="cd" data-at="${esc(hero.resetAt || "")}">—</b><span class="wclock">${hero.resetAt ? " · " + fmtClock(hero.resetAt) : ""}</span></div>
+          <div class="hreset2">${hero.resetAt
+            ? `resets in <b class="cd" data-at="${esc(hero.resetAt)}">—</b><span class="wclock"> · ${fmtClock(hero.resetAt)}</span>`
+            : `rolling · no fixed reset`}</div>
         </div>
       </div>`;
       if (others.length) {
@@ -494,7 +502,7 @@ function cardHTML(id, prov) {
             <span class="mtag">${windowTag(e.window, e.name)}</span>
             <span class="mmeter ${pctClass(op)}"><i style="width:${Math.max(0, Math.min(100, op))}%"></i></span>
             <span class="mpct">${Math.round(op)}%</span>
-            <span class="mreset">in <span class="cd" data-at="${esc(e.resetAt || "")}">—</span></span>
+            <span class="mreset">${e.resetAt ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>` : "rolling"}</span>
           </div>`;
         }).join("")}</div>`;
       }

@@ -97,7 +97,10 @@ host cron was removed 2026-09-14.
   (verified 2026-09-22, DECISIONS.md 2026-09-22), so escalate to Google —
   never invent percentages or blame the login. Z.ai shares the family: limit rows
   are keyed by `unit` (3 = 5 h, 6 = weekly), not by the `type` name, which Z.ai has
-  already renamed once.
+  already renamed once. Z.ai publishes no monthly quota; the plan renewal date
+  comes from `biz/subscription/list` with the same key (the live plan is annual),
+  and a failure there must never downgrade a live quota card (DECISIONS.md
+  2026-10-23).
 - **Reintroduce cookie pastes or unattended login automation for Qwen.** Settled
   (2026-09-14; source shape updated 2026-09-24): percentages come from the
   token-plan usage API, called **directly** by the collector (`fetchQwenCli`)
