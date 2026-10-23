@@ -1,8 +1,8 @@
 # AI Usage Allowance Dashboard
 
 A self-contained Docker Compose stack showing how much allowance is left on
-each AI subscription — Claude, ChatGPT, Z.ai, OpenCode Go, Gemini/Antigravity,
-Qwen — with Telegram alerts when any window runs low and rollover warnings
+each AI subscription - Claude, ChatGPT, Z.ai, OpenCode Go, Gemini/Antigravity,
+Qwen - with Telegram alerts when any window runs low and reset warnings
 24h and 12h before billing reset.
 
 Everything runs in containers: the server is a single zero-dependency Node
@@ -121,7 +121,7 @@ glow.
 Configured via the Settings tab (Telegram bot token/chat ID and optional webhook URL):
 
 - **Low-allowance warnings**: Staged notifications when the tightest window hits the configured threshold (default 15%) and when it hits 0% (exhausted).
-- **Rollover / reset warnings**: Sent **24 hours** and **12 hours** before each agent's longest allowance window (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai) resets. Fires only when allowance remains (`> 0%`) so you can make maximum use of quota before rollover. Short 5-hour rolling limits are excluded to prevent spam.
+- **Reset warnings**: Sent **24 hours** and **12 hours** before a durable allowance window resets. The collector picks the longest window that still has allowance (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai; Antigravity's Claude/GPT-OSS buckets reset on a multi-day/weekly cadence, while its Gemini flash/image buckets are 5-hour and excluded). Fires only when allowance remains (`> 0%`) so you can use it before it expires. If the longest window is exhausted, a shorter durable window with remaining quota can still trigger a warning.
 
 ## API
 

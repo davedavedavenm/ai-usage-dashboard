@@ -3,6 +3,18 @@
 
 export const ZAI_WINDOW_NAMES = { fiveHour: "Last 5 hours", weekly: "This week", mcp: "Tools (MCP)" };
 
+// Provider reset timestamps arrive as epoch milliseconds (Z.ai) or ISO strings
+// (OpenCode Go). A malformed value must not throw while the collector is
+// assembling every provider; drop the reset instead.
+export function isoFrom(value) {
+  if (value == null || value === "") return undefined;
+  const text = String(value);
+  const ms = typeof value === "number"
+    ? value
+    : /^\d{10,}$/.test(text) ? Number(text) : Date.parse(text);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+}
+
 // Z.ai keys every allowance row by `unit` and has renamed the `type` string more
 // than once (TOKENS_LIMIT on the token plans, CREDIT_LIMIT on the credit plans —
 // verified live 2026-09-21, when the card died with "no usable windows" because
@@ -118,7 +130,7 @@ export function parseAnthropicOAuthUsage(data) {
       .filter(r => r && typeof r.display_name === "string" && typeof r.percent === "number" && r.percent > 0)
       .map(r => `${r.display_name} ${Math.round(r.percent)}%`);
     const result = { status: "ok", label: "anthropic", entries };
-    if (activeRows.length) result.note = "weekly split: " + activeRows.join(" · ");
+    if (activeRows.length) result.note = "weekly usage: " + activeRows.join(" · ");
     return result;
   }
   return null;

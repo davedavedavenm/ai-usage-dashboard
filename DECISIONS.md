@@ -518,6 +518,15 @@ that file as root, so a dave-side login can be refused —
 evening: on-demand collect returned rolling/weekly/monthly `ok`, all 7
 providers green.
 
+**OpenCode Go `rate-limited` is an exhausted cap, not a probe failure
+(2026-10-23).** The usage API can answer a window (currently monthly) with
+`status: "rate-limited"` and `percent: 100` (100% used) while still returning
+that window's percentage and reset time. All three windows were read
+successfully; the collector keeps the provider `ok`, marks that row
+`(limited)`/`limited: true`, and shows the reset. Only missing windows or
+percentages make the provider `partial`/`error`. Do not diagnose this as a key
+expiry unless the error is `401 api_key_expired`.
+
 **ChatGPT does not self-refresh on a headless box — Historical gotcha.**
 opencode refreshes its openai OAuth token lazily, only while being used
 interactively. The collector probes via the external `opencode-quota` CLI,
@@ -561,16 +570,20 @@ midpoint stages described above. Only the configured near-exhaustion threshold
 (default 15%) and exhaustion remain. Old provider/window/destination receipts
 are preserved. No retired cookie/session notices are reintroduced.
 
-**Rollover / reset warning alerts (2026-09-17):** To ensure Dave can make
-maximum use of AI subscription allowances before they expire and roll over, the
-collector evaluates the longest allowance window per provider (monthly for
-OpenCode Go; weekly for Claude, OpenAI, Qwen, Z.ai; short 5-hour rolling
-limits such as Google Antigravity models are excluded to prevent false alarms)
-and dispatches Telegram warnings (and configured webhooks) at T-24h and T-12h
-before reset when allowance remains (`percentRemaining > 0`). If 0% remains, no
-warning is sent (already exhausted). Deduplication is keyed by window and
-reset timestamp under `state.rolloverAlerts[id]`, atomic with fsync, and
-tracked independently per destination channel.
+**Rollover / reset warning alerts (2026-09-17; refined 2026-10-23):** To ensure
+Dave can make maximum use of AI subscription allowances before they expire, the
+collector evaluates the longest durable allowance window **that still has
+allowance** per provider (monthly for OpenCode Go and Qwen; weekly for Claude,
+OpenAI, Z.ai; Antigravity's `agy-claude`/`agy-gptoss` buckets are treated as
+weekly because live resets are multi-day, while `agy-g3flash`/`agy-g3image` are
+5-hour and excluded) and dispatches Telegram warnings (and configured webhooks)
+at T-24h and T-12h before reset when allowance remains (`percentRemaining > 0`).
+If the longest window is exhausted, a shorter durable window with remaining
+quota can warn instead (e.g. OpenCode Go monthly 0% -> weekly 10%). If 0%
+remains in every durable window, no warning is sent (already exhausted).
+Deduplication is keyed by window and reset timestamp under
+`state.rolloverAlerts[id]`, atomic with fsync, and tracked independently per
+destination channel.
 
 Do not create a second bot or hardcode chat ids anywhere.
 

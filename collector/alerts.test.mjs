@@ -13,6 +13,7 @@ function harness(replies = []) {
   const calls = [], writes = [], logs = [];
   const context = vm.createContext({
     ALERT_THRESHOLD_DEFAULT: 15, DASHBOARD_URL: 'https://fixture.invalid', TG_API: 'https://fixture.invalid', REQ_TIMEOUT_MS: 20,
+    PROVIDER_LABELS: { anthropic: 'Claude', openai: 'ChatGPT', zai: 'Z.ai', 'opencode-go': 'OpenCode Go', 'google-antigravity': 'Gemini · Antigravity', 'alibaba-coding-plan': 'Qwen', 'radeon-cloud': 'Radeon Cloud' },
     AbortController, setTimeout, clearTimeout, console: { log: value => logs.push(value) },
     writeState: state => writes.push(JSON.parse(JSON.stringify(state))),
     fetch: async (url, options) => {
@@ -177,6 +178,46 @@ test('longestPeriodEntries picks the longest allowance window', () => {
   assert.equal(longest.find(p => p.id === 'anthropic').entry.name, 'Weekly');
 });
 
+test('longestPeriodEntries falls back to a shorter window when the longest is exhausted', () => {
+  const h = harness();
+  const providers = {
+    'opencode-go': {
+      label: 'OpenCode Go',
+      entries: [
+        { name: 'Last 5 hours', window: 'rolling', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 100 },
+        { name: 'This week', window: 'weekly', resetAt: '2026-09-21T06:00:00Z', renderType: 'percent', percentRemaining: 10 },
+        { name: 'This month (limited)', window: 'monthly', resetAt: '2026-09-20T18:00:00Z', renderType: 'percent', percentRemaining: 0, limited: true },
+      ],
+    },
+  };
+  const longest = h.context.longestPeriodEntries(providers);
+  assert.equal(longest.length, 1);
+  assert.equal(longest[0].entry.name, 'This week');
+  assert.equal(longest[0].label, 'OpenCode Go');
+});
+
+test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible', async () => {
+  const h = harness();
+  const state = {};
+  const cfg = { ...config, webhookUrl: '' };
+  const resetAt = '2026-09-21T06:00:00Z';
+  const data = {
+    'google-antigravity': {
+      label: 'google-antigravity',
+      entries: [
+        { name: 'G3Flash', window: 'agy-g3flash', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 80 },
+        { name: 'Claude', window: 'agy-claude', resetAt, renderType: 'percent', percentRemaining: 50 },
+        { name: 'GPT-OSS', window: 'agy-gptoss', resetAt, renderType: 'percent', percentRemaining: 50 },
+      ],
+    },
+  };
+  const t20 = new Date('2026-09-20T10:00:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, t20);
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0].body.text, /Gemini · Antigravity · Claude/);
+  assert.match(h.calls[0].body.text, /50%<\/b> allowance remaining before reset/);
+});
+
 test('rollover alerts: 24h and 12h warnings fire before reset when allowance remains', async () => {
   const h = harness();
   const state = {};
@@ -195,6 +236,8 @@ test('rollover alerts: 24h and 12h warnings fire before reset when allowance rem
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /resets in ~24 hours/);
   assert.match(h.calls[0].body.text, /66%<\/b> allowance remaining/);
+  assert.match(h.calls[0].body.text, /before reset/);
+  assert.doesNotMatch(h.calls[0].body.text, /rollover/);
 
   // Subsequent collection within 24h window -> deduped, no repeat
   const t22 = new Date('2026-09-19T14:00:00Z').getTime();

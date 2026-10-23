@@ -9,7 +9,7 @@ import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
-import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage } from "./quota-parsers.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +58,15 @@ const COLLECTOR_NAME = process.env.AIUD_COLLECTOR_NAME || envValue(readParentEnv
 const REQ_TIMEOUT_MS = 20000;
 
 const GO_WINDOW_NAMES = { rolling: "Last 5 hours", weekly: "This week", monthly: "This month" };
+const PROVIDER_LABELS = {
+  anthropic: "Claude",
+  openai: "ChatGPT",
+  zai: "Z.ai",
+  "opencode-go": "OpenCode Go",
+  "google-antigravity": "Gemini · Antigravity",
+  "alibaba-coding-plan": "Qwen",
+  "radeon-cloud": "Radeon Cloud",
+};
 // google-antigravity covers the whole Google AI plan (Gemini + Claude model
 // windows) with the existing Antigravity OAuth login; google-gemini-cli and
 // google-agy are deliberately NOT probed (2026-08-30: gemini-cli needs a
@@ -159,7 +168,7 @@ async function fetchZai(auth) {
       unmapped.push(`${limit?.type ?? "?"}/${limit?.unit ?? "?"} (no percentage)`);
       continue;
     }
-    const resetIso = limit.nextResetTime ? new Date(Math.round(limit.nextResetTime)).toISOString() : undefined;
+    const resetIso = isoFrom(limit.nextResetTime);
     entries.push(pctEntry(ZAI_WINDOW_NAMES[win], percentRemaining, resetIso, win));
   }
   // The plan renamed its limit rows once already and dropped the MCP window with
@@ -189,24 +198,34 @@ async function fetchOpenCodeGo(auth) {
   const usage = result.body?.usage;
   if (!usage) return { status: "error", error: "Invalid OpenCode Go API response: usage missing" };
   const entries = [];
-  const errors = [];
+  const missing = [];
+  const limited = [];
   for (const win of ["rolling", "weekly", "monthly"]) {
     const w = usage[win];
     if (!w || typeof w.percent !== "number") {
-      errors.push(`${win}: ${w?.status ?? "missing"}`);
+      missing.push(`${win}: ${w?.status ?? "missing"}`);
       continue;
     }
-    const resetIso = w.resetsAt ? new Date(Date.parse(w.resetsAt)).toISOString() : undefined;
+    const resetIso = isoFrom(w.resetsAt);
     if (w.status !== "ok") {
-      entries.push({ ...pctEntry(GO_WINDOW_NAMES[win], 100 - w.percent, resetIso, win), name: GO_WINDOW_NAMES[win] + " (limited)" });
-      errors.push(`${win}: ${w.status}`);
+      // A rate-limited monthly window is an exhausted allowance, not a probe
+      // failure: the API still returned a valid percentage and reset time.
+      entries.push({ ...pctEntry(GO_WINDOW_NAMES[win], 100 - w.percent, resetIso, win), name: GO_WINDOW_NAMES[win] + " (limited)", limited: true });
+      limited.push(GO_WINDOW_NAMES[win]);
       continue;
     }
     entries.push(pctEntry(GO_WINDOW_NAMES[win], 100 - w.percent, resetIso, win));
   }
-  if (entries.length && errors.length) return { status: "partial", label: "OpenCode Go", entries, error: "OpenCode Go API error: " + errors.join("; ") };
-  if (!entries.length && errors.length) return { status: "error", error: "OpenCode Go API error: " + errors.join("; ") };
-  return { status: "ok", label: "OpenCode Go", entries };
+  const notes = [];
+  if (limited.length) notes.push(`${limited.join(", ")} cap reached (rate-limited)`);
+  if (missing.length) notes.push(`unavailable: ${missing.join("; ")}`);
+  if (entries.length && missing.length) {
+    return { status: "partial", label: "OpenCode Go", entries, error: "OpenCode Go API error: " + missing.join("; "), ...(notes.length ? { note: notes.join(" · ") } : {}) };
+  }
+  if (!entries.length) {
+    return { status: "error", error: "OpenCode Go API error: " + (missing.length ? missing.join("; ") : "no usage windows") };
+  }
+  return { status: "ok", label: "OpenCode Go", entries, ...(notes.length ? { note: notes.join(" · ") } : {}) };
 }
 
 async function fetchRadeonLoad() {
@@ -625,7 +644,7 @@ function tightestEntry(providers) {
       }
       if (!best || e.percentRemaining < best.percentRemaining) best = e;
     }
-    if (best) out.push({ id, label: r.label || id, entry: best });
+    if (best) out.push({ id, label: PROVIDER_LABELS[id] || r.label || id, entry: best });
   }
   return out;
 }
@@ -637,7 +656,12 @@ function windowDurationHours(entry) {
   if (win === "monthly" || /month/i.test(name)) return 24 * 30; // 720h
   if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
   if (win === "daily" || /day/i.test(name)) return 24;         // 24h
-  return 5; // 5h, rolling, agy-*, etc.
+  // Antigravity publishes per-model buckets. The probe sends no duration, but
+  // live data shows Claude/GPT-OSS reset on a multi-day (weekly) cadence while
+  // G3Flash/G3Image are 5-hour. Classify by the stable window id so the durable
+  // buckets can receive rollover warnings.
+  if (/^agy-(claude|gpt-?oss)$/.test(win)) return 24 * 7;      // 168h
+  return 5; // 5h, rolling, agy-g3flash/g3image, etc.
 }
 
 function longestPeriodEntries(providers) {
@@ -648,6 +672,10 @@ function longestPeriodEntries(providers) {
     let bestHours = 0;
     for (const e of r.entries) {
       if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      // Only a window with something left can trigger a use-it-or-lose-it
+      // warning. This also lets a shorter non-empty window win when the
+      // longest window is already exhausted (OpenCode Go monthly 0% vs weekly).
+      if (e.percentRemaining <= 0) continue;
       if (!e.resetAt) continue;
       const dur = windowDurationHours(e);
       // Exclude short/rolling windows (< 24h) from rollover alerts
@@ -657,7 +685,7 @@ function longestPeriodEntries(providers) {
         bestHours = dur;
       }
     }
-    if (best) out.push({ id, label: r.label || id, entry: best });
+    if (best) out.push({ id, label: PROVIDER_LABELS[id] || r.label || id, entry: best });
   }
   return out;
 }
@@ -690,7 +718,7 @@ function buildRolloverAlertText(stageHours, info) {
   const { label, entry, pct } = info;
   const emoji = stageHours <= 12 ? "⚠️" : "⏳";
   const headline = `resets in ~${stageHours} hours`;
-  const pctText = `<b>${pct}%</b> allowance remaining before rollover`;
+  const pctText = `<b>${pct}%</b> allowance remaining before reset`;
   const resetText = entry.resetAt
     ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     : "";

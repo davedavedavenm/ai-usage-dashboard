@@ -8,6 +8,7 @@ import {
   parseAnthropicOAuthUsage,
   extractAntigravityModelEntries,
   retainSkippedProviders,
+  isoFrom,
 } from './quota-parsers.mjs';
 
 const pct = (percentRemaining, resetAt, name = 'Window') => ({ name, window: 'agy-test', renderType: 'percent', percentRemaining, resetAt });
@@ -74,7 +75,7 @@ test('parseAnthropicOAuthUsage parses live /api/oauth/usage payload and weekly b
       { name: '5h', renderType: 'percent', percentRemaining: 100, resetAt: undefined, window: '5h' },
       { name: 'Weekly', renderType: 'percent', percentRemaining: 0, resetAt: '2026-10-19T02:59:59.512Z', window: 'weekly' },
     ],
-    note: 'weekly split: Claude Code 97% · Cowork 3%',
+    note: 'weekly usage: Claude Code 97% · Cowork 3%',
   });
   assert.equal(parseAnthropicOAuthUsage({}), null);
   assert.equal(parseAnthropicOAuthUsage(null), null);
@@ -171,4 +172,13 @@ test('zai subscription parser returns null when no usable active renewal exists'
   assert.equal(parseZaiSubscription({ data: [{ status: 'VALID' }] }), null);
   assert.equal(parseZaiSubscription({ data: [{ status: 'VALID', nextRenewTime: 'not-a-date' }] }), null);
   assert.equal(parseZaiSubscription({ data: [{ status: 'EXPIRED', nextRenewTime: '2027-09-22' }] }), null);
+});
+
+test('isoFrom accepts epoch/ISO resets and drops malformed values', () => {
+  assert.equal(isoFrom(1792788035258), '2026-10-23T20:40:35.258Z');
+  assert.equal(isoFrom('1792788035258'), '2026-10-23T20:40:35.258Z');
+  assert.equal(isoFrom('2026-10-26T00:00:00.000Z'), '2026-10-26T00:00:00.000Z');
+  assert.equal(isoFrom('not-a-date'), undefined);
+  assert.equal(isoFrom(undefined), undefined);
+  assert.equal(isoFrom(''), undefined);
 });
