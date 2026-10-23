@@ -245,29 +245,31 @@ export function extractAntigravityModelEntries(modelsMap) {
 
 // GPT-OSS is not an Antigravity model Dave uses. The host quota config may
 // still ask the CLI for it, so drop it at the display boundary before the
-// card and alert code see it.
+// card and alert code see it. The id is spelled "GPT-OSS" in display output
+// and "GPTOSS" in the host config - match both.
 export function filterAntigravityDisplayEntries(entries) {
-  return (entries || []).filter(e => e && !/gpt-?oss/i.test(String(e.name || "")));
+  return (entries || []).filter(e => e && !/gpt[-_]oss/i.test(String(e.name || "")));
 }
 
 // G4Argon launched in Antigravity on 2026-10-13 for Google AI Pro/Ultra
-// subscribers. When Google withholds it (this account still answers
-// free-tier), show one honest row instead of omitting the model or inventing
-// a percentage. Google's entitlement sync is the only fix; a login is not.
+// subscribers. This account's quota API hides the model while answering
+// free-tier - even though the Antigravity desktop app offers it (Dave used
+// G4Argon there on 2026-10-23, the same day the API hid it). So show one
+// honest row: the desync hides it from the probe, the model is NOT absent for
+// Dave. Google's entitlement sync is the only fix; a login is not.
 export function antigravityG4ArgonUnavailable(plan) {
   const tier = plan?.ok && typeof plan.tier === "string" ? plan.tier : "";
   const paid = plan?.ok && typeof plan.paidTier === "string" ? plan.paidTier : "";
   const contradiction = Boolean(tier && paid && tier !== paid);
-  const value = contradiction || tier === "free-tier"
-    ? `not offered (${tier || "free-tier"})`
-    : "not offered";
+  const hidden = contradiction || tier === "free-tier";
+  const value = hidden ? `hidden by Google (${tier || "free-tier"})` : "not offered";
   const note = contradiction
-    ? `Google answers ${tier} while naming ${paid} as the paid tier - G4Argon needs AI Pro/Ultra; entitlement desync, not a login problem`
+    ? `Google's quota API hides G4Argon while answering ${tier} (paid tier ${paid}) - the Antigravity app still offers the model; entitlement desync, not a login problem`
     : tier
       ? `Google answers ${tier}; G4Argon is not in this account's Antigravity model list`
       : "G4Argon is not in this account's Antigravity model list";
   return {
-    entry: { name: "G4Argon", renderType: "value", value, window: "agy-g4argon" },
+    entry: { name: "G4Argon", renderType: "value", value, window: "agy-g4argon", degraded: true },
     note,
   };
 }

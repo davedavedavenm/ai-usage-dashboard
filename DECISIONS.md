@@ -427,34 +427,55 @@ annotated with "Google AI Pro · live quota", so the dashboard card renders live
 and healthy. (The model set has since changed: GPT-OSS was removed from the
 card on 2026-10-23 — see below.)
 
-## Antigravity card drops GPT-OSS; G4Argon is an unavailable row until Google re-links entitlement — Active (2026-10-23)
+## Antigravity card drops GPT-OSS; G4Argon is shown as "hidden by Google" while the quota API answers free-tier — Active (2026-10-23)
 
 Dave asked for the Antigravity card to show Claude, G3Flash and G4Argon and to
 stop showing GPT-OSS. `filterAntigravityDisplayEntries()` drops GPT-OSS at the
-display boundary, and `agy-gptoss` is no longer a durable rollover window, so
-GPT-OSS never reaches the card or the alert code even though the host
-`googleModels` config still lists `GPTOSS`.
+display boundary (matching both `GPT-OSS` and `GPTOSS` spellings), and
+`agy-gptoss` is no longer a durable rollover window, so GPT-OSS never reaches
+the card or the alert code even though the host `googleModels` config still
+lists `GPTOSS`.
 
 G4Argon (Gemini 4 Argon, launched in Antigravity on 2026-10-13 for Google AI
-Pro/Ultra subscribers) is **not in this account's
-`v1internal:fetchAvailableModels` response**. `loadCodeAssist` still answers
-`currentTier: "free-tier"` while naming `paidTier: "g1-pro-tier"` and offering
-an upgrade. Raw probe on 2026-10-23:
+Pro/Ultra subscribers): **Dave has the plan and uses G4Argon on the Antigravity
+desktop — he used it on 2026-10-23, the same day he is "out of usage".** But the
+quota API he is probed through still hides it:
 
-- 23 models returned; no `gemini-4-argon` and no `gemini-4-*` key.
-- Claude 5.5 (`claude-opus-5-5-*` / `claude-sonnet-5-5-*`) and
-  `gpt-oss-120b-medium` are present; `gemini-3-flash` and
-  `gemini-3.1-flash-image` carry the current 40% buckets.
-- User-Agents `antigravity/1.11.9`, `1.12.0`, `1.13.0`, `2.0.0`, `2.1.0` all
-  return the same 23-model list.
+- `v1internal:fetchAvailableModels` returns 23-26 models with **no
+  `gemini-4-argon` and no `gemini-4-*` key** (User-Agents `1.11.9`, `1.18.3`,
+  `2.15.1` across linux/darwin/windows all give the same list).
+- `loadCodeAssist` answers `currentTier: "free-tier"` while naming
+  `paidTier: "g1-pro-tier"`, and the desktop `language_server.log` on 2026-10-23
+  logs `SetUserTier called with userTier: ""` — the auth layer sees no tier.
+- Every project (`rising-fact-p41fc`, `integrated-paratext-srkws`,
+  `aicode-consumers`) answers the same free-tier / no-argon shape.
 
-This is the 2026-09-22 entitlement desync, not a client, key or login problem;
-re-adding the account does not repair it. The card therefore shows one
-`G4Argon` value row — `not offered (free-tier)` — and a note naming the
-`free-tier`/`g1-pro-tier` contradiction. Do **not** omit G4Argon silently and
-do **not** invent a percentage. When Google re-links the subscription and the
-API lists `gemini-4-argon*`, `opencode-quota` (the host config already has
-`G4ARGON`) returns it and the real percentage replaces the value row.
+So the correct statement is **not** "the account has no Argon" (it does — Dave
+uses it) and **not** "Argon is not offered" (Google offers it). The accurate,
+honest label is that **Google's quota API hides the model for this credential**
+(the 2026-09-22 entitlement desync, most plausibly surfacing once the paid
+bucket is exhausted). The card shows one `G4Argon` value row —
+`hidden by Google (free-tier)`, amber, `degraded: true` — with a note naming the
+desync and that the desktop app still offers it. Do **not** invent a percentage
+and do **not** relabel it "not offered" (that was wrong and Dave corrected it).
+When Google's API lists `gemini-4-argon*` again (host config already has
+`G4ARGON`), `opencode-quota` returns it and the real percentage replaces this row.
+
+## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
+
+Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports
+three windows; the monthly cap is `rate-limited` (100% used → 0% remaining,
+`limited: true`) while the weekly row still shows 10% remaining. The weekly 10%
+is technically real but **unusable** — requests fail until the monthly cap
+resets — so showing it as a normal green row read as "you still have 10%".
+
+Fix: when a provider flags any window `limited`, the card hero prefers that
+capped row (so the number is 0%, "no allowance"), and the other windows render
+dimmed with a `· capped` tag and a tooltip "unusable until the capped window
+resets". The `limited`/`capped` state is provider-driven (`limited: true` from
+the collector), not a Gemini special case. This does not change what opencode.ai
+reports — it changes what the dashboard leads with, to match the user's real
+experience of "no allowance".
 
 ## Qwen card states its single monthly window's used percentage — Active (2026-10-23)
 

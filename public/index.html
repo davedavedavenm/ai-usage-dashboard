@@ -153,11 +153,16 @@
   .mini .mpct.low { color: var(--amber); }
   .mini .mpct.crit { color: var(--red); }
   .mini.loadrow { grid-template-columns: minmax(0, 1fr) 52px auto; grid-template-areas: "name pct state" "meter meter meter"; row-gap: 6px; }
-  .mini.loadrow .mtag { grid-area: name; overflow: hidden; text-overflow: ellipsis; }
-  .mini.loadrow .mpct { grid-area: pct; }
-  .mini.loadrow .mreset { grid-area: state; }
-  .mini.loadrow .mmeter { grid-area: meter; }
+  /* Readability for the fleet-load feed: long model ids sit on their own line
+     (no ellipsis at desktop widths), the number carries the colour, the state
+     word stays quiet. 2026-10-23. */
+  .mini.loadrow .mtag { grid-area: name; font-size: 13.5px; letter-spacing: .03em; color: var(--ink); text-transform: none; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+  .mini.loadrow .mpct { grid-area: pct; font-size: 19px; font-weight: 700; }
+  .mini.loadrow .mreset { grid-area: state; color: var(--ink-faint); font-size: 11px; letter-spacing: .08em; }
+  .mini.loadrow .mmeter { grid-area: meter; height: 8px; }
   .mini .mreset { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Rows that still count down but cannot be used while another window is capped */
+  .mini.capped .mtag, .mini.capped .mpct, .mini.capped .mreset, .mini.capped .mmeter { opacity: .45; }
   .card.state-crit { box-shadow: 0 0 22px rgba(242, 93, 93, 0.25), inset 0 0 0 1px rgba(242, 93, 93, 0.35); }
   @keyframes pulse { 50% { opacity: .55; } }
   .vline {
@@ -489,13 +494,17 @@ function cardHTML(id, prov) {
                percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`)) ||
                percents[0];
       } else {
-        hero = percents.reduce((a, b) => {
-          if (a.percentRemaining !== b.percentRemaining) return a.percentRemaining < b.percentRemaining ? a : b;
-          // A tied window with a real reset makes a more useful hero than one
-          // whose provider sent no reset time (Z.ai's rolling 5-hour row).
-          if (!!a.resetAt !== !!b.resetAt) return a.resetAt ? a : b;
-          return a;
-        });
+        // An exhausted window flagged by the provider itself (OpenCode Go's
+        // rate-limited monthly cap) is the honest hero even when a shorter
+        // window still has allowance - "no allowance left" must read 0%.
+        hero = percents.find(e => e.limited === true) ||
+               percents.reduce((a, b) => {
+                 if (a.percentRemaining !== b.percentRemaining) return a.percentRemaining < b.percentRemaining ? a : b;
+                 // A tied window with a real reset makes a more useful hero than one
+                 // whose provider sent no reset time (Z.ai's rolling 5-hour row).
+                 if (!!a.resetAt !== !!b.resetAt) return a.resetAt ? a : b;
+                 return a;
+               });
       }
       const others = percents.filter(e => e !== hero);
       const p = hero.percentRemaining;
@@ -508,11 +517,16 @@ function cardHTML(id, prov) {
             : `rolling · no fixed reset`}</div>
         </div>
       </div>`;
+      // When the provider itself flags a window as capped (OpenCode Go's
+      // rate-limited monthly allowance), the other windows still report their
+      // own counters but requests fail until the cap resets - show them dimmed
+      // and labelled instead of letting a live 10% read as usable allowance.
+      const capped = percents.some(e => e.limited === true);
       if (others.length) {
         body += `<div class="minis">${others.map(e => {
           const op = e.percentRemaining;
-          return `<div class="mini" title="${esc(e.name)}">
-            <span class="mtag">${windowTag(e.window, e.name)}</span>
+          return `<div class="mini${capped ? " capped" : ""}" title="${esc(e.name)}${capped ? " · unusable until the capped window resets" : ""}">
+            <span class="mtag">${windowTag(e.window, e.name)}${capped ? " · capped" : ""}</span>
             <span class="mmeter ${pctClass(op)}"><i style="width:${Math.max(0, Math.min(100, op))}%"></i></span>
             <span class="mpct ${pctClass(op)}">${Math.round(op)}%</span>
             <span class="mreset">${e.resetAt ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>` : "rolling"}</span>
@@ -535,7 +549,7 @@ function cardHTML(id, prov) {
     if (values.length) {
       body += values.map(e => {
         const isFallback = (id === "alibaba-coding-plan" && /quota available/i.test(String(e.value || ""))) ||
-          (id === "google-antigravity" && /not offered/i.test(String(e.value || "")));
+          (id === "google-antigravity" && e.degraded === true);
         return `<div class="vline${isFallback ? " degrade" : ""}"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`;
       }).join("");
     }

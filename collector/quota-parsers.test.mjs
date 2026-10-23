@@ -112,16 +112,19 @@ test('antigravity display drops GPT-OSS even when the host probe returns it', ()
   assert.deepEqual(filterAntigravityDisplayEntries(undefined), []);
 });
 
-test('G4Argon unavailable row names the verified entitlement contradiction', () => {
+test('G4Argon hidden row names the verified entitlement contradiction, never claims the model is absent', () => {
   const full = antigravityG4ArgonUnavailable({ ok: true, tier: 'free-tier', paidTier: 'g1-pro-tier' });
   assert.deepEqual(full.entry, {
     name: 'G4Argon',
     renderType: 'value',
-    value: 'not offered (free-tier)',
+    value: 'hidden by Google (free-tier)',
     window: 'agy-g4argon',
+    degraded: true,
   });
-  assert.match(full.note, /free-tier.*g1-pro-tier/);
-  assert.match(full.note, /not a login problem/);
+  assert.match(full.note, /free-tier/);
+  assert.match(full.note, /g1-pro-tier/);
+  assert.match(full.note, /desktop app offers it|entitlement desync/);
+  assert.doesNotMatch(full.entry.value, /not offered/);
 
   const unknown = antigravityG4ArgonUnavailable({ ok: false });
   assert.equal(unknown.entry.value, 'not offered');
