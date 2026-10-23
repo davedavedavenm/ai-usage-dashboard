@@ -446,7 +446,7 @@ nothing about billing. The console endpoint
 `GET https://api.z.ai/api/biz/subscription/list` answers to the same
 coding-plan API key with the purchased subscription (`status`, `productName`,
 `nextRenewTime`, `billingCycle`, `autoRenew`). `fetchZai()` reads it in the
-same pass and publishes a `Plan renewal` value row (`22 Sep 2027 · annual`);
+same pass and publishes a `Billing renewal` value row (`22 Sep 2027 · annual`);
 if that second call fails the row is omitted but a live quota card is never
 downgraded.
 

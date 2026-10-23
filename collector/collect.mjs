@@ -175,7 +175,7 @@ async function fetchZai(auth) {
   // card whose live quota windows were read fine.
   const renewal = subResult && !subResult.error ? parseZaiSubscription(subResult.body) : null;
   const renewalRow = renewal
-    ? [{ name: "Plan renewal", renderType: "value", value: formatZaiRenewal(renewal) }]
+    ? [{ name: "Billing renewal", renderType: "value", value: formatZaiRenewal(renewal) }]
     : [];
   const missing = unmapped.length ? " · unmapped limit rows: " + unmapped.join(", ") : "";
   return { status: "ok", label: "Z.ai", entries: [...planRow, ...renewalRow, ...entries], note: "windows: " + entries.map(e => e.name).join(", ") + missing };
