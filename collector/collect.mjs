@@ -685,7 +685,12 @@ function longestPeriodEntries(providers) {
         bestHours = dur;
       }
     }
-    if (best) out.push({ id, label: PROVIDER_LABELS[id] || r.label || id, entry: best });
+    if (best) {
+      const blocked = r.entries
+        .filter(e => e && e.limited === true && e.resetAt)
+        .map(e => ({ name: String(e.name || "").replace(/\s*\(limited\)$/i, ""), resetAt: e.resetAt }));
+      out.push({ id, label: PROVIDER_LABELS[id] || r.label || id, entry: best, blocked });
+    }
   }
   return out;
 }
@@ -715,14 +720,22 @@ function buildAlertText(stage, info) {
 }
 
 function buildRolloverAlertText(stageHours, info) {
-  const { label, entry, pct } = info;
+  const { label, entry, pct, blocked } = info;
   const emoji = stageHours <= 12 ? "⚠️" : "⏳";
   const headline = `resets in ~${stageHours} hours`;
   const pctText = `<b>${pct}%</b> allowance remaining before reset`;
   const resetText = entry.resetAt
     ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     : "";
-  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}\n${esc(DASHBOARD_URL)}`;
+  const blockedText = (blocked || []).length
+    ? "\n" + blocked.map(b => {
+        const when = b.resetAt
+          ? new Date(b.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+          : "";
+        return `⚠️ ${esc(b.name)} cap reached${when ? " until " + when : ""}`;
+      }).join("\n")
+    : "";
+  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}${blockedText}\n${esc(DASHBOARD_URL)}`;
 }
 
 async function sendTelegram(cfg, text) {
@@ -768,7 +781,7 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
   const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
   const winKeyOf = (e) => `${e.window || ""}|${e.resetAt || ""}`;
 
-  for (const { id, label, entry } of longestPeriodEntries(providers)) {
+  for (const { id, label, entry, blocked } of longestPeriodEntries(providers)) {
     const pct = entry.percentRemaining;
     if (pct <= 0) continue;
 
@@ -813,7 +826,7 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
     };
 
     if (cfg.token && cfg.chatId && !delivered("telegram")) {
-      const result = await sendTelegram(cfg, buildRolloverAlertText(stage, { label, entry, pct }));
+      const result = await sendTelegram(cfg, buildRolloverAlertText(stage, { label, entry, pct, blocked }));
       if (result.ok) saveReceipt("telegram");
       else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", alertType: "rollover", status: result.status }));
     }
@@ -823,6 +836,7 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
         provider: id,
         label,
         entry: { name: entry.name, window: entry.window, percentRemaining: pct, resetAt: entry.resetAt },
+        blocked: (blocked || []).map(b => ({ name: b.name, resetAt: b.resetAt })),
         hoursBeforeReset: stage,
         dashboardUrl: DASHBOARD_URL,
         timestamp: new Date().toISOString(),

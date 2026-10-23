@@ -194,6 +194,9 @@ test('longestPeriodEntries falls back to a shorter window when the longest is ex
   assert.equal(longest.length, 1);
   assert.equal(longest[0].entry.name, 'This week');
   assert.equal(longest[0].label, 'OpenCode Go');
+  assert.equal(longest[0].blocked.length, 1);
+  assert.equal(longest[0].blocked[0].name, 'This month');
+  assert.equal(longest[0].blocked[0].resetAt, '2026-09-20T18:00:00Z');
 });
 
 test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible', async () => {
@@ -216,6 +219,28 @@ test('rollover alerts: Antigravity Claude/GPT-OSS durable windows are eligible',
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /Gemini · Antigravity · Claude/);
   assert.match(h.calls[0].body.text, /50%<\/b> allowance remaining before reset/);
+});
+
+test('rollover alerts: OpenCode Go weekly warning names the limited monthly cap', async () => {
+  const h = harness();
+  const state = {};
+  const cfg = { ...config, webhookUrl: '' };
+  const data = {
+    'opencode-go': {
+      label: 'OpenCode Go',
+      entries: [
+        { name: 'Last 5 hours', window: 'rolling', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 100 },
+        { name: 'This week', window: 'weekly', resetAt: '2026-09-21T06:00:00Z', renderType: 'percent', percentRemaining: 10 },
+        { name: 'This month (limited)', window: 'monthly', resetAt: '2026-09-20T18:00:00Z', renderType: 'percent', percentRemaining: 0, limited: true },
+      ],
+    },
+  };
+  const t20 = new Date('2026-09-20T10:00:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, t20);
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0].body.text, /OpenCode Go · This week/);
+  assert.match(h.calls[0].body.text, /10%<\/b> allowance remaining before reset/);
+  assert.match(h.calls[0].body.text, /This month cap reached until/);
 });
 
 test('rollover alerts: 24h and 12h warnings fire before reset when allowance remains', async () => {
