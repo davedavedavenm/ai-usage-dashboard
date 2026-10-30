@@ -319,7 +319,7 @@
     </div>
     <div class="sblock">
       <div class="shead">Telegram alerts</div>
-      <div class="ssub">staged warnings per window: 🟡 50% → 🟠 30% → 🔴 below this, once per reset</div>
+      <div class="ssub">warnings per window: 🔴 below your threshold (default 15%), then 🚨 at 0%, once per reset</div>
       <div class="srow"><span class="sstate" id="tgState">checking…</span></div>
       <div class="srow" style="align-items:flex-start">
         <div style="flex:1;min-width:220px">
@@ -731,7 +731,7 @@ async function loadSettings() {
       aliState.textContent = "saved but TRUNCATED — re-copy";
       aliState.className = "sstate bad";
     } else if (s.alibaba.cookieSet) {
-      aliState.textContent = "cookie set (" + s.alibaba.cookieLen + " chars)";
+      aliState.textContent = "legacy cookie stored (" + s.alibaba.cookieLen + " chars)";
       aliState.className = "sstate ok";
     } else {
       aliState.textContent = "not set";
