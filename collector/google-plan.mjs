@@ -2,9 +2,11 @@
 //
 // The quota CLI's per-model windows come from Google's quota buckets, and those
 // buckets are a constant "full" for accounts Google does not meter — which reads
-// on the dashboard as four 100% rows that never move. This probe asks the one
-// endpoint that states the account's plan outright (`v1internal:loadCodeAssist`)
-// so the card can name the reason instead of showing placeholders.
+// on the dashboard as four 100% rows that never move. This probe reads the
+// account's plan from `v1internal:loadCodeAssist` and, separately, the live
+// G4Argon bucket from `v1internal:retrieveUserQuotaSummary` (the older
+// per-model endpoints omit Argon entirely), so the card can show a real
+// percentage instead of a placeholder.
 //
 // Credentials come from the files the antigravity plugin already owns: the
 // account store (refresh token + project) and the plugin's companion package
@@ -15,9 +17,16 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { randomUUID } from "crypto";
+import { antigravityQuotaSummaryArgon } from "./quota-parsers.mjs";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
+// The summary endpoint is the only one that publishes the Gemini 4 Argon
+// bucket. It also requires the newer AGY client UA; the old UA returns only
+// the Claude/GPT family (verified 2026-10-30).
+const QUOTA_SUMMARY_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
+const QUOTA_SUMMARY_UA = "antigravity/cli/1.4.7 darwin/amd64";
 const USER_AGENT = "antigravity/1.11.9 linux/x64";
 const PROBE_TIMEOUT_MS = 15000;
 
@@ -85,10 +94,13 @@ async function post(url, { headers, body, timeoutMs = PROBE_TIMEOUT_MS }) {
   }
 }
 
-// Returns { ok, tier, paidTier, upgradeOffered, project } on success and
-// { ok: false, error } on any failure — a failed plan probe must never be able
-// to take the collector down or change what it publishes.
+// Returns { ok, tier, paidTier, upgradeOffered, project, argon } on success,
+// and { ok: false, error, argon } on failure. `argon` is the live G4Argon
+// percent entry from the quota-summary endpoint when Google publishes one.
+// A failed plan probe must never take the collector down or change what it
+// publishes.
 export async function probeGooglePlan() {
+  let argon = null;
   try {
     const account = readAccount();
     if (!account) return { ok: false, error: "no Antigravity account store on this host" };
@@ -108,14 +120,33 @@ export async function probeGooglePlan() {
     const token = await tokenResponse.json().catch(() => null);
     if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token" };
 
+    try {
+      const summaryResponse = await post(QUOTA_SUMMARY_URL, {
+        headers: {
+          Authorization: "Bearer " + token.access_token,
+          "Content-Type": "application/json",
+          "User-Agent": QUOTA_SUMMARY_UA,
+          "x-activity-request-id": randomUUID(),
+        },
+        body: JSON.stringify({ project: account.projectId }),
+      });
+      if (summaryResponse.ok) {
+        const summary = await summaryResponse.json().catch(() => null);
+        argon = antigravityQuotaSummaryArgon(summary);
+      }
+    } catch {
+      // The plan probe still works without the summary; the card falls back to
+      // a "not reported" Argon row instead.
+    }
+
     const planResponse = await post(LOAD_CODE_ASSIST_URL, {
       headers: { Authorization: "Bearer " + token.access_token, "Content-Type": "application/json", "User-Agent": USER_AGENT },
       body: JSON.stringify({ cloudaicompanionProject: account.projectId }),
     });
-    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status };
+    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon };
     const plan = await planResponse.json().catch(() => null);
     const tier = plan?.currentTier?.id || null;
-    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier" };
+    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon };
     // Google's upsell text embeds the account email in a URL, so only its
     // presence is read; the wording is never published.
     const upgradeOffered = Boolean(plan?.currentTier?.upgradeSubscriptionUri || plan?.currentTier?.upgradeSubscriptionText);
@@ -126,9 +157,10 @@ export async function probeGooglePlan() {
       paidTier: typeof paid === "string" ? paid : (paid?.id || null),
       upgradeOffered,
       project: account.projectId,
+      argon,
     };
   } catch (error) {
-    return { ok: false, error: String(error?.message || error).slice(0, 160) };
+    return { ok: false, error: String(error?.message || error).slice(0, 160), argon };
   }
 }
 

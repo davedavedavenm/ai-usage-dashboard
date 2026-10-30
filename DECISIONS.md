@@ -430,7 +430,7 @@ annotated with "Google AI Pro · live quota", so the dashboard card renders live
 and healthy. (The model set has since changed: GPT-OSS was removed from the
 card on 2026-10-23 — see below.)
 
-## Antigravity card drops GPT-OSS; G4Argon is shown as "hidden by Google" while the quota API answers free-tier — Active (2026-10-23)
+## Antigravity card drops GPT-OSS; G4Argon is shown as "hidden by Google" while the quota API answers free-tier — Superseded (2026-10-30; see the quota-summary entry below)
 
 Dave asked for the Antigravity card to show Claude, G3Flash and G4Argon and to
 stop showing GPT-OSS. `filterAntigravityDisplayEntries()` drops GPT-OSS at the
@@ -463,6 +463,35 @@ desync and that the desktop app still offers it. Do **not** invent a percentage
 and do **not** relabel it "not offered" (that was wrong and Dave corrected it).
 When Google's API lists `gemini-4-argon*` again (host config already has
 `G4ARGON`), `opencode-quota` returns it and the real percentage replaces this row.
+
+## G4Argon usage comes from the Antigravity quota-summary endpoint — Active (2026-10-30)
+
+The 2026-10-23 "hidden by Google" conclusion was an endpoint/User-Agent gap,
+not an entitlement proof. Verified live from khpi5 on 2026-10-30:
+
+- `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
+  with `Authorization: Bearer <Antigravity token>`,
+  `User-Agent: antigravity/cli/1.4.7 darwin/amd64`, header
+  `x-activity-request-id: <uuid>` and body `{"project":"<project>"}` returns
+  `groups`: `Gemini Models` (weekly 35.4% left, 5h 100%),
+  `Claude and GPT models` (weekly 0%, 5h 19.3% disabled) and
+  **`Gemini 4 Argon`** (weekly 7.7% left, reset 2026-11-01T07:06:50Z).
+- The old UA `antigravity/1.11.9 linux/x64` returns only the Claude/GPT group;
+  `fetchAvailableModels` has no `gemini-4-argon*` key and
+  `retrieveUserQuota` returns only `buckets` with no Argon. That is why the
+  pinned `opencode-quota` 4.8.1 never exposed Argon — the data was not missing
+  from the account.
+- `collector/google-plan.mjs` now calls the summary endpoint after refreshing
+  the Antigravity token and returns `argon`; `collect.mjs` publishes it as a
+  normal `G4Argon` percent row (`window: agy-g4argon`) when the CLI did not
+  provide one. `windowDurationHours()` treats `agy-g4argon` as weekly so it is
+  eligible for rollover warnings. The fallback row says `not reported by
+  Google` (not "hidden"/"not offered") and must not be read as proof the model
+  is absent.
+- `loadCodeAssist` still answers `currentTier: free-tier` with
+  `paidTier: g1-pro-tier`; that remains a separate tier readback. Do not use
+  it to suppress the real Argon bucket, and do not revert the summary call to
+  the old UA.
 
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 

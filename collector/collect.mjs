@@ -678,6 +678,7 @@ function windowDurationHours(entry) {
   // G3Flash/G3Image are 5-hour. Classify by the stable window id so the durable
   // bucket can receive rollover warnings. GPT-OSS is not displayed or alerted.
   if (/^agy-claude$/.test(win)) return 24 * 7;                 // 168h
+  if (/^agy-g4argon$/.test(win)) return 24 * 7;                // Argon summary is weekly
   return 5; // 5h, rolling, agy-g3flash/g3image, etc.
 }
 
@@ -1049,9 +1050,14 @@ async function main() {
       r.entries = filterAntigravityDisplayEntries(r.entries);
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
         const plan = await probeGooglePlan();
-        const unavailable = antigravityG4ArgonUnavailable(plan);
-        r.entries.push(unavailable.entry);
-        r.note = [r.note, unavailable.note].filter(Boolean).join(" · ");
+        if (plan?.argon) {
+          r.entries.push(plan.argon);
+          r.note = [r.note, "G4Argon from Google's quota summary"].filter(Boolean).join(" · ");
+        } else {
+          const unavailable = antigravityG4ArgonUnavailable(plan);
+          r.entries.push(unavailable.entry);
+          r.note = [r.note, unavailable.note].filter(Boolean).join(" · ");
+        }
       }
       if (isConstantAntigravityReport(r.entries)) {
         r.note = [r.note, "Google AI Pro · live quota"].filter(Boolean).join(" · ");

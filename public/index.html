@@ -464,6 +464,17 @@ function sortWindows(a, b) {
   const pb = WIN_ORDER[b.window] ?? 9;
   return (pa - pb) || (a.name || "").localeCompare(b.name || "");
 }
+// The Antigravity card leads with the binding Gemini window: the lowest
+// non-Claude/GPT allowance (G3Flash, G3Image, G4Argon). Claude/GPT stay out of
+// the hero so a 0% Claude window cannot make the whole Gemini plan look dead
+// (2026-09-05 decision); Argon is a Gemini model and must be able to lead when
+// it is the tightest window (2026-10-30).
+function antigravityBindingEntry(percents) {
+  const all = percents || [];
+  const gemini = all.filter(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
+  const pool = gemini.length ? gemini : all;
+  return pool.reduce((a, b) => (!a || b.percentRemaining < a.percentRemaining ? b : a), null);
+}
 
 function cardHTML(id, prov) {
   const meta = META[id] || { ...FALLBACK, name: id };
@@ -490,9 +501,7 @@ function cardHTML(id, prov) {
     if (percents.length) {
       let hero = null;
       if (id === "google-antigravity") {
-        hero = percents.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
-               percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`)) ||
-               percents[0];
+        hero = antigravityBindingEntry(percents);
       } else {
         // An exhausted window flagged by the provider itself (OpenCode Go's
         // rate-limited monthly cap) is the honest hero even when a shorter
@@ -565,9 +574,8 @@ function cardHTML(id, prov) {
   let bindingPct = null;
   if (percentsForState.length) {
     if (id === "google-antigravity") {
-      const gemini = percentsForState.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
-                     percentsForState.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
-      bindingPct = gemini ? gemini.percentRemaining : Math.min(...percentsForState.map(e => e.percentRemaining));
+      const gemini = antigravityBindingEntry(percentsForState);
+      bindingPct = gemini ? gemini.percentRemaining : null;
     } else {
       bindingPct = Math.min(...percentsForState.map(e => e.percentRemaining));
     }
@@ -616,9 +624,8 @@ function render(record) {
     if (percents.length) {
       let repPct = null;
       if (id === "google-antigravity") {
-        const gemini = percents.find(e => /flash/i.test(`${e.name} ${e.window}`)) ||
-                       percents.find(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
-        repPct = gemini ? gemini.percentRemaining : Math.min(...percents.map(e => e.percentRemaining));
+        const gemini = antigravityBindingEntry(percents);
+        repPct = gemini ? gemini.percentRemaining : null;
       } else {
         repPct = Math.min(...percents.map(e => e.percentRemaining));
       }

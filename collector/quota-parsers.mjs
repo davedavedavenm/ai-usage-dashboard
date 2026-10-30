@@ -251,26 +251,60 @@ export function filterAntigravityDisplayEntries(entries) {
   return (entries || []).filter(e => e && !/gpt[-_]oss/i.test(String(e.name || "")));
 }
 
-// G4Argon launched in Antigravity on 2026-10-13 for Google AI Pro/Ultra
-// subscribers. This account's quota API hides the model while answering
-// free-tier - even though the Antigravity desktop app offers it (Dave used
-// G4Argon there on 2026-10-23, the same day the API hid it). So show one
-// honest row: the desync hides it from the probe, the model is NOT absent for
-// Dave. Google's entitlement sync is the only fix; a login is not.
+// v1internal:retrieveUserQuotaSummary (UA antigravity/cli/1.4.7+) publishes
+// family groups. Gemini 4 Argon has its own group and is absent from the old
+// fetchAvailableModels / retrieveUserQuota endpoints the quota CLI still uses,
+// which is why the card used to say Google hid the model. Return a publishable
+// percent entry for the Argon bucket, or null when the summary has no usable
+// (non-disabled) Argon window.
+export function antigravityQuotaSummaryArgon(body) {
+  const groups = Array.isArray(body?.groups) ? body.groups : [];
+  for (const group of groups) {
+    if (!group) continue;
+    const buckets = Array.isArray(group.buckets) ? group.buckets : [];
+    const isArgon = /argon/i.test(String(group.displayName || "")) ||
+      buckets.some(b => b && /argon/i.test(`${b.bucketId || ""} ${b.displayName || ""}`));
+    if (!isArgon) continue;
+    for (const bucket of buckets) {
+      if (!bucket || bucket.disabled) continue;
+      if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
+      const resetAt = typeof bucket.resetTime === "string" && bucket.resetTime.trim()
+        ? bucket.resetTime.trim()
+        : undefined;
+      return {
+        name: "G4Argon",
+        renderType: "percent",
+        percentRemaining: Math.round(Math.max(0, Math.min(1, bucket.remainingFraction)) * 100),
+        resetAt,
+        window: "agy-g4argon",
+      };
+    }
+  }
+  return null;
+}
+
+// Fallback when the quota-summary endpoint does not return an Argon bucket.
+// The old fetchAvailableModels / retrieveUserQuota path omits Argon, but that
+// is an endpoint limitation, not proof the account lacks the model. Keep the
+// row honest: "not reported", plus the tier readback for diagnostics.
 export function antigravityG4ArgonUnavailable(plan) {
   const tier = plan?.ok && typeof plan.tier === "string" ? plan.tier : "";
   const paid = plan?.ok && typeof plan.paidTier === "string" ? plan.paidTier : "";
   const contradiction = Boolean(tier && paid && tier !== paid);
-  const hidden = contradiction || tier === "free-tier";
-  const value = hidden ? `hidden by Google (${tier || "free-tier"})` : "not offered";
-  const note = contradiction
-    ? `Google's quota API hides G4Argon while answering ${tier} (paid tier ${paid}) - the Antigravity app still offers the model; entitlement desync, not a login problem`
+  const tierNote = contradiction
+    ? ` (loadCodeAssist still answers ${tier} while naming ${paid} as the paid tier)`
     : tier
-      ? `Google answers ${tier}; G4Argon is not in this account's Antigravity model list`
-      : "G4Argon is not in this account's Antigravity model list";
+      ? ` (loadCodeAssist answers ${tier})`
+      : "";
   return {
-    entry: { name: "G4Argon", renderType: "value", value, window: "agy-g4argon", degraded: true },
-    note,
+    entry: {
+      name: "G4Argon",
+      renderType: "value",
+      value: "not reported by Google",
+      window: "agy-g4argon",
+      degraded: true,
+    },
+    note: `Google's quota summary did not return a G4Argon bucket this run${tierNote}; the Antigravity app may still offer the model. This is not proof the model is unavailable.`,
   };
 }
 

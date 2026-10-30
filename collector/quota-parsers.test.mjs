@@ -9,6 +9,7 @@ import {
   extractAntigravityModelEntries,
   filterAntigravityDisplayEntries,
   antigravityG4ArgonUnavailable,
+  antigravityQuotaSummaryArgon,
   retainSkippedProviders,
   isoFrom,
 } from './quota-parsers.mjs';
@@ -112,23 +113,68 @@ test('antigravity display drops GPT-OSS even when the host probe returns it', ()
   assert.deepEqual(filterAntigravityDisplayEntries(undefined), []);
 });
 
-test('G4Argon hidden row names the verified entitlement contradiction, never claims the model is absent', () => {
+test('antigravity quota summary exposes the live G4Argon weekly bucket', () => {
+  // Live shape from v1internal:retrieveUserQuotaSummary with UA
+  // antigravity/cli/1.4.7 (2026-10-30): the old fetchAvailableModels /
+  // retrieveUserQuota endpoints omit Argon entirely, but the summary endpoint
+  // returns it as its own group.
+  const body = {
+    groups: [
+      {
+        displayName: 'Gemini Models',
+        buckets: [
+          { bucketId: 'gemini-weekly', displayName: 'Weekly Limit Remaining', window: 'weekly', remainingFraction: 0.35419062, resetTime: '2026-10-30T22:02:38Z' },
+          { bucketId: 'gemini-5h', displayName: 'Five Hour Limit Remaining', window: '5h', remainingFraction: 1, resetTime: '2026-10-30T12:12:07Z' },
+        ],
+      },
+      {
+        displayName: 'Claude and GPT models',
+        buckets: [
+          { bucketId: '3p-weekly', remainingFraction: 0, resetTime: '2026-11-05T07:21:22Z' },
+          { bucketId: '3p-5h', remainingFraction: 0.1930904, disabled: true },
+        ],
+      },
+      {
+        displayName: 'Gemini 4 Argon',
+        buckets: [
+          { bucketId: 'gemini-argon-wtu-weekly', displayName: 'Gemini 4 Argon Weekly Limit', window: 'weekly', remainingFraction: 0.0773376, resetTime: '2026-11-01T07:06:50Z' },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(antigravityQuotaSummaryArgon(body), {
+    name: 'G4Argon',
+    renderType: 'percent',
+    percentRemaining: 8,
+    resetAt: '2026-11-01T07:06:50Z',
+    window: 'agy-g4argon',
+  });
+
+  // The old User-Agent response contains only Claude/GPT; no Argon row.
+  assert.equal(antigravityQuotaSummaryArgon({ groups: [{ displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-weekly', remainingFraction: 0 }] }] }), null);
+  // A disabled Argon bucket is not a usable allowance.
+  assert.equal(antigravityQuotaSummaryArgon({ groups: [{ displayName: 'Gemini 4 Argon', buckets: [{ remainingFraction: 0.5, disabled: true }] }] }), null);
+  assert.equal(antigravityQuotaSummaryArgon({}), null);
+  assert.equal(antigravityQuotaSummaryArgon(null), null);
+});
+
+test('G4Argon fallback says Google did not report it, never claims the model is absent', () => {
   const full = antigravityG4ArgonUnavailable({ ok: true, tier: 'free-tier', paidTier: 'g1-pro-tier' });
   assert.deepEqual(full.entry, {
     name: 'G4Argon',
     renderType: 'value',
-    value: 'hidden by Google (free-tier)',
+    value: 'not reported by Google',
     window: 'agy-g4argon',
     degraded: true,
   });
+  assert.match(full.note, /quota summary did not return/);
   assert.match(full.note, /free-tier/);
   assert.match(full.note, /g1-pro-tier/);
-  assert.match(full.note, /desktop app offers it|entitlement desync/);
-  assert.doesNotMatch(full.entry.value, /not offered/);
+  assert.doesNotMatch(full.entry.value, /not offered|hidden/);
 
   const unknown = antigravityG4ArgonUnavailable({ ok: false });
-  assert.equal(unknown.entry.value, 'not offered');
-  assert.match(unknown.note, /not in this account's Antigravity model list/);
+  assert.equal(unknown.entry.value, 'not reported by Google');
+  assert.match(unknown.note, /quota summary did not return/);
 });
 
 test('retainSkippedProviders preserves recent provider state when a collect skips a provider', () => {

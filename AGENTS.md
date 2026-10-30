@@ -94,8 +94,12 @@ host cron was removed 2026-09-14.
   account's plan instead (DECISIONS.md 2026-09-21). When the account **does** hold
   an active AI plan and Google still answers `free-tier`, it is a Google
   entitlement desync: re-adding the Antigravity login does not repair it
-  (verified 2026-09-22, DECISIONS.md 2026-09-22), so escalate to Google —
-  never invent percentages or blame the login. Z.ai shares the family: limit rows
+  (verified 2026-09-22, DECISIONS.md 2026-09-22), so escalate to Google -
+  never invent percentages or blame the login. **Argon is the exception:** the
+  newer `v1internal:retrieveUserQuotaSummary` endpoint with the
+  `antigravity/cli/1.4.7` User-Agent publishes a real `Gemini 4 Argon` weekly
+  bucket even while `loadCodeAssist` answers free-tier; the collector uses it
+  for the G4Argon row (DECISIONS.md 2026-10-30). Z.ai shares the family: limit rows
   are keyed by `unit` (3 = 5 h, 6 = weekly), not by the `type` name, which Z.ai has
   already renamed once. Z.ai publishes no monthly quota; the plan renewal date
   comes from `biz/subscription/list` with the same key (the live plan is annual),
