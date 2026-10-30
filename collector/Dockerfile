@@ -72,4 +72,8 @@ ENV HOME=/creds
 ENV AIUD_DATA_DIR=/data
 ENV AIUD_SETTINGS_PATH=/data/settings.json
 
+# Unprivileged fallback for plain `docker run`; compose overrides this with
+# PUID/PGID so token refreshes stay owned by the host user.
+USER node
+
 CMD ["node", "runner.mjs"]

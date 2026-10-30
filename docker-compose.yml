@@ -3,6 +3,9 @@ services:
     build: .
     image: ai-usage-dashboard:latest
     container_name: ai-usage-dashboard
+    # Run as the stack owner so /data files stay owned by the host user.
+    # PUID/PGID default to 1000; set them in .env on hosts with another uid.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     ports:
       - "${DASHBOARD_PORT:-8099}:8099"
@@ -23,6 +26,9 @@ services:
     build: ./collector
     image: ai-usage-collector:latest
     container_name: aiud-collector
+    # Run as the stack owner: token refreshes write back through the mounted
+    # host credential files and must not leave them root-owned (2026-10-30).
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     depends_on:
       - ai-usage-dashboard
