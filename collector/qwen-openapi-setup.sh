@@ -38,7 +38,10 @@ fi
 # docker run -e VAR only forwards exported variables.
 export BL_AK_ID BL_AK_SECRET
 
+# Run as the invoking host user: the collector runs as PUID/PGID, so a
+# root-written data/bailian would leave it unable to read the token (2026-10-30).
 docker run --rm -it \
+  --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/blhome \
   -e BAILIAN_CONFIG_DIR=/cfg \
   -e DO_NOT_TRACK=1 \
@@ -47,7 +50,8 @@ docker run --rm -it \
   node:22-slim sh -c '
     set -e
     mkdir -p "$HOME"
-    npm i -g bailian-cli >/dev/null 2>&1
+    npm i -g --prefix /tmp/blnpm bailian-cli >/dev/null 2>&1
+    export PATH="/tmp/blnpm/bin:$PATH"
     bl auth login --open-api --access-key-id "$BL_AK_ID" --access-key-secret "$BL_AK_SECRET"
     node -e "
       const fs = require(\"fs\");
@@ -58,6 +62,7 @@ docker run --rm -it \
       c.base_url = \"https://dashscope-intl.aliyuncs.com\";
       c.telemetry = false;
       fs.writeFileSync(f, JSON.stringify(c, null, 2) + \"\n\");
+      fs.chmodSync(f, 0o600);
       console.log(\"config patched for the international console\");
     "
     echo "--- Token Plan usage probe (direct gateway):"

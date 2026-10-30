@@ -27,7 +27,21 @@ server container ── GET / dashboard
 ```bash
 git clone <this-repo> && cd ai-usage-dashboard
 cp .env.example .env        # set INGEST_KEY (random string) — see SUPPORT.md
+# The containers run as your uid:gid (PUID/PGID, default 1000). Create the
+# mount points before the first `up`: Docker creates missing bind sources as
+# root, and the services could not write them afterwards.
+mkdir -p data ~/.claude ~/.config/opencode ~/.cache/opencode ~/.local/share/opencode
 docker compose up -d --build
+```
+
+Upgrading a stack created before 2026-10-30? The collector used to run as
+root and may have left credential/state files root-owned. Fix them once from
+the stack host, then recreate:
+
+```bash
+sudo find ~/.claude ~/.config/opencode ~/.cache/opencode ~/.local/share/opencode \
+  ./data -user root -exec chown "$(id -u):$(id -g)" {} +
+docker compose up -d --force-recreate
 ```
 
 Open `http://<host>:8099/` — the dashboard shows "Awaiting first sync" until

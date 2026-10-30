@@ -224,7 +224,7 @@ const server = http.createServer((req, res) => {
     const payload = JSON.stringify({
       chat_id: chatId,
       parse_mode: "HTML",
-      text: "✅ <b>AI Allowance alerts are live</b>\nYou'll get a warning when a window falls below your threshold (default 15%) and another at 0% — once per reset period.",
+      text: "✅ <b>AI Allowance alerts are live</b>\nYou'll get a warning when a window falls below your threshold (default 15%) and another at 0% — once per reset period — plus 24h/12h warnings before a durable window resets.",
     });
     const reqOpts = {
       method: "POST",

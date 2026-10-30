@@ -1,6 +1,6 @@
 # Endpoint Hardening (Collector UID + Alert Copy) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Stop the collector from writing root-owned credential and state files on khpi5, correct user-facing alert copy that still promises removed 50%/30% stages, and reconcile the docs with the live host.
 
@@ -39,7 +39,7 @@
 - Consumes: nothing.
 - Produces: `user: "${PUID:-1000}:${PGID:-1000}"` on both services; `USER node` in the collector image; documented `PUID`/`PGID`.
 
-- [ ] **Step 1: Add the compose user mapping**
+- [x] **Step 1: Add the compose user mapping**
 
 In `docker-compose.yml`, add under both `container_name:` lines:
 
@@ -49,7 +49,7 @@ In `docker-compose.yml`, add under both `container_name:` lines:
     user: "${PUID:-1000}:${PGID:-1000}"
 ```
 
-- [ ] **Step 2: Add the image-level fallback**
+- [x] **Step 2: Add the image-level fallback**
 
 In `collector/Dockerfile`, immediately before `CMD ["node", "runner.mjs"]`:
 
@@ -58,7 +58,7 @@ In `collector/Dockerfile`, immediately before `CMD ["node", "runner.mjs"]`:
 USER node
 ```
 
-- [ ] **Step 3: Document the variables**
+- [x] **Step 3: Document the variables**
 
 In `.env.example` under `CREDENTIALS_ROOT`:
 
@@ -67,12 +67,12 @@ In `.env.example` under `CREDENTIALS_ROOT`:
 #PGID=1000                       # collector/dashboard gid
 ```
 
-- [ ] **Step 4: Validate the compose rendering**
+- [x] **Step 4: Validate the compose rendering**
 
 Run on khpi5 after the file is pushed: `docker compose config | grep -A2 'user:'`
 Expected: both services show `user: 1000:1000` (or the `.env` values).
 
-- [ ] **Step 5: Commit the repo change**
+- [x] **Step 5: Commit the repo change**
 
 ```bash
 git add docker-compose.yml collector/Dockerfile .env.example
@@ -89,7 +89,7 @@ git commit -m "fix: run stack services as the host user"
 - Consumes: Task 1's compose user mapping.
 - Produces: dave-owned credential and data files; a collector running as uid 1000.
 
-- [ ] **Step 1: Push the changed files with LF normalization**
+- [x] **Step 1: Push the changed files with LF normalization**
 
 ```powershell
 $t = [IO.File]::ReadAllText("docker-compose.yml") -replace "`r`n","`n"
@@ -99,7 +99,7 @@ scp .env.example khpi5:/home/dave/stacks/ai-usage-dashboard/.env.example
 scp collector/Dockerfile khpi5:/home/dave/stacks/ai-usage-dashboard/collector/Dockerfile
 ```
 
-- [ ] **Step 2: Chown existing root-owned files to the stack owner**
+- [x] **Step 2: Chown existing root-owned files to the stack owner**
 
 ```bash
 sudo find /home/dave/.claude /home/dave/.config/opencode /home/dave/.cache/opencode /home/dave/.local/share/opencode -user root -exec chown dave:dave {} +
@@ -108,7 +108,7 @@ sudo find /home/dave/stacks/ai-usage-dashboard/data -user root -exec chown dave:
 
 Expected: no `root`-owned entries remain under those paths (`find ... -user root` returns nothing).
 
-- [ ] **Step 3: Rebuild and recreate the collector**
+- [x] **Step 3: Rebuild and recreate the collector**
 
 ```bash
 cd /home/dave/stacks/ai-usage-dashboard
@@ -118,7 +118,7 @@ docker compose up -d --force-recreate collector
 
 Expected: `docker inspect aiud-collector --format '{{.Config.User}}'` → `1000:1000`; `docker compose exec -T collector id` → `uid=1000`.
 
-- [ ] **Step 4: Prove a collect still works**
+- [x] **Step 4: Prove a collect still works**
 
 ```bash
 docker compose restart collector
@@ -129,7 +129,7 @@ curl -s http://127.0.0.1:8099/api/quota | head -c 300
 
 Expected: `http: 204`, all seven providers `ok`, fresh `receivedAt`.
 
-- [ ] **Step 5: Prove the host CLIs can read their credentials again**
+- [x] **Step 5: Prove the host CLIs can read their credentials again**
 
 ```bash
 timeout 15 /home/dave/.local/bin/claude auth status --json | head -3
@@ -151,7 +151,7 @@ Expected: `"loggedIn": true` and no root-owned files.
 - Consumes: nothing.
 - Produces: user-facing copy that matches the collector's actual alert stages.
 
-- [ ] **Step 1: Replace the Telegram test message**
+- [x] **Step 1: Replace the Telegram test message**
 
 Change the test text in `POST /api/telegram-test` to:
 
@@ -159,7 +159,7 @@ Change the test text in `POST /api/telegram-test` to:
 text: "✅ <b>AI Allowance alerts are live</b>\nYou'll get a warning when a window falls below your threshold (default 15%) and another at 0% — once per reset period.",
 ```
 
-- [ ] **Step 2: Replace the Settings subtitle**
+- [x] **Step 2: Replace the Settings subtitle**
 
 Change the Qwen/Telegram block subtitle to:
 
@@ -167,16 +167,16 @@ Change the Qwen/Telegram block subtitle to:
 <div class="ssub">warnings per window: 🔴 below your threshold (default 15%), then 🚨 at 0%, once per reset</div>
 ```
 
-- [ ] **Step 3: Fix the legacy cookie label**
+- [x] **Step 3: Fix the legacy cookie label**
 
 In `loadSettings()`, change the set-cookie label to `legacy cookie stored (N chars)` so a dead fallback cookie no longer reads as healthy.
 
-- [ ] **Step 4: Verify the strings**
+- [x] **Step 4: Verify the strings**
 
 Run: `grep -R "50% →\|50% ->" server.js public/index.html SUPPORT.md`
 Expected: no matches in those three files.
 
-- [ ] **Step 5: Rebuild the dashboard image and recreate**
+- [x] **Step 5: Rebuild the dashboard image and recreate**
 
 ```bash
 docker compose build ai-usage-dashboard
@@ -186,7 +186,7 @@ curl -s http://127.0.0.1:8099/ | grep -o "below your threshold"
 
 Expected: the new phrase is served.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server.js public/index.html
@@ -205,27 +205,27 @@ git commit -m "fix: correct alert stage description"
 - Consumes: Task 1's UID decision and Task 2's verified host state.
 - Produces: docs that match `crontab -l` and the running stack.
 
-- [ ] **Step 1: Fix the SUPPORT alert section**
+- [x] **Step 1: Fix the SUPPORT alert section**
 
 Replace the 50%/30% staging sentence with the threshold + 0% behaviour, and add `PUID`/`PGID` to the env table.
 
-- [ ] **Step 2: Fix the SUPPORT health check**
+- [x] **Step 2: Fix the SUPPORT health check**
 
 Replace "all four containers Up" with "the two default services (`ai-usage-dashboard`, `aiud-collector`) Up; the `qwen` profile adds two more".
 
-- [ ] **Step 3: Fix the DECISIONS cron inventory**
+- [x] **Step 3: Fix the DECISIONS cron inventory**
 
 Replace the `*/2 qwen-watchdog` block with: no host cron entries for this stack; scheduling is in the collector container; the watchdog line was removed 2026-09-14.
 
-- [ ] **Step 4: Fix the keepalive note**
+- [x] **Step 4: Fix the keepalive note**
 
 In the Qwen AccessKey decision, replace the "still logs SESSION_EXPIRED" sentence with the current behaviour: the 2-hourly keepalive verifies the legacy cookie once and exits 0 with "skipping cookie keepalive" when the AccessKey config is present.
 
-- [ ] **Step 5: Add the unprivileged-collector decision**
+- [x] **Step 5: Add the unprivileged-collector decision**
 
 Add an Active entry naming the 2026-10-30 change: services run as PUID/PGID (default 1000), the collector image keeps `USER node`, and existing root-owned files were chowned once. Note that this removes the old `sudo chown auth.json` trap for OpenCode Go renewals.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add SUPPORT.md DECISIONS.md
@@ -242,16 +242,16 @@ git commit -m "docs: reconcile collector uid, cron, and alert notes"
 - Consumes: Tasks 1–4.
 - Produces: a clean, pushed `main` that matches khpi5.
 
-- [ ] **Step 1: Run the test suites**
+- [x] **Step 1: Run the test suites**
 
 Run: `node --test collector/quota-parsers.test.mjs collector/alerts.test.mjs`
 Expected: 33 passing, 0 failing.
 
-- [ ] **Step 2: Re-verify repo ↔ host hashes**
+- [x] **Step 2: Re-verify repo ↔ host hashes**
 
-Compute LF-normalized SHA-256 for every changed tracked file locally and `sha256sum` on khpi5; every pair must match.
+Compute LF-normalized SHA-256 for every changed **deployed** file (compose, Dockerfiles, `.env.example`, `server.js`, `public/index.html`, collector code) locally and `sha256sum` on khpi5; every pair must match. Docs stay repo-only.
 
-- [ ] **Step 3: Re-verify the live stack**
+- [x] **Step 3: Re-verify the live stack**
 
 ```bash
 curl -s http://127.0.0.1:8099/api/quota
@@ -261,7 +261,7 @@ docker compose ps
 
 Expected: fresh `receivedAt`, all providers `ok`, both services `Up`, collector `user` 1000.
 
-- [ ] **Step 4: Push**
+- [x] **Step 4: Push**
 
 ```bash
 git push origin main

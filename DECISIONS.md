@@ -93,7 +93,7 @@ by `claude-token.mjs` (falling back to the CLI with its timeout patched to 15 s)
 entire 5-hour window even on successful probes. Parser now treats reset_at as
 optional and ignores `(none)`.
 
-## Qwen runs on a dedicated remote-desktop browser profile; collector auto-grabs via CDP — Active
+## Qwen runs on a dedicated remote-desktop browser profile; collector auto-grabs via CDP — Superseded (2026-09-14; fallback retained off-by-default)
 
 The Bailian console session (real percentage windows) lives in a persistent
 Chromium profile inside the **`qwen-browser`** container (see
@@ -135,7 +135,7 @@ percentages reappear within one collect cycle (≤10 min). No alerts about it
 re-login: console-tab keepalive → CDP grab (78 cookies, compose-network
 route) → verifyAliCookie ok → 65% weekly on the card.
 
-**Resilience layers (all live on khpi5):**
+**Resilience layers (retained for the off-by-default fallback; containers stopped 2026-09-14):**
 - *Inside* the container, `/config/.config/labwc/autostart`
   (repo copy: `collector/qwen-labwc-autostart.sh`) runs **two supervising
   loops**: (1) relaunch — whenever no chromium process is running, clear
@@ -154,9 +154,10 @@ route) → verifyAliCookie ok → 65% weekly on the card.
   `CHROME_CLI` var carries the same URL but is only consumed by the image's
   stock `/defaults/autostart` on a wiped volume — the supervisor owns
   launching on this volume.)
-- *Outside*, the */2 cron `qwen-watchdog.sh` backstop force-recreates both
-  containers when CDP on :9333 fails twice, 75 s apart. With the in-container
-  supervisor this rarely fires; keep it for kasmvnc-level death.
+- *Outside*, the */2 cron `qwen-watchdog.sh` backstop force-recreated both
+  containers when CDP on :9333 failed twice, 75 s apart. It was removed on
+  2026-09-14 with the browser-path retirement (see Cron inventory); the script
+  stays in the repo for a deliberate revival of the `qwen` profile.
 
 Ops note: after manual intervention prefer recreate over restart
 (`docker compose up -d qwen-browser cdp-relay`); plain `docker restart` can
@@ -696,9 +697,9 @@ archetype: cron's stripped env hid the `claude` binary).
 
 ## Stack services run as the host user, not root — Active (2026-10-30)
 
-Both services were missing an effective unprivileged user:
-`collector/Dockerfile` had a comment promising one but no `USER` line, so the
-collector ran as uid 0 and rewrote mounted credential files as root.
+The collector was missing the unprivileged user its own Dockerfile comment
+promised: there was no `USER` line, so it ran as uid 0 and rewrote mounted
+credential files as root.
 `~/.claude/.credentials.json` became `root:root 0600`; the interactive `claude`
 CLI as dave then reported `loggedIn: false`, and the same drift hit
 `~/.cache/opencode/opencode-quota/google-access-tokens.json`,
@@ -706,15 +707,17 @@ CLI as dave then reported `loggedIn: false`, and the same drift hit
 `data/settings.json`, `data/collector-state.json`, `data/bailian/config.json`.
 
 `docker-compose.yml` now sets `user: "${PUID:-1000}:${PGID:-1000}"` on both
-services (the collector image also keeps `USER node` as a plain-`docker run`
-fallback), and `.env.example` documents `PUID`/`PGID`. khpi5's existing
+services, and the collector image sets `USER node` so a plain `docker run`
+does not default to root (the supported path is compose with the credential
+mounts and PUID/PGID). `.env.example` documents `PUID`/`PGID`. khpi5's existing
 root-owned files were chowned to `dave:dave` once. Verified after the switch:
 the collector runs as uid 1000, all seven providers stay `ok`, `claude auth
 status` as dave is logged in again, and the credential/cache/data paths remain
 writable.
 
 Do not set `PUID`/`PGID` to a uid that does not own `CREDENTIALS_ROOT` or
-`<stack>/data`; the collector starts but cannot refresh tokens.
+`<stack>/data`: the collector loses read access to 0600 credential files and
+cannot write `/data`, so providers skip and alert state cannot persist.
 
 ## Cron inventory (khpi5, Europe/London) — Active
 

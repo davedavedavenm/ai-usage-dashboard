@@ -137,7 +137,7 @@ opencode OAuth; Z.ai/OpenCode Go/Qwen-key = API keys; Qwen = live percentages
 via the direct token-plan gateway call on the `bailian-cli`-maintained console
 token (main-account AccessKey; monthly window since 2026-09-24;
 CDP/cookie/key fallbacks). Telegram
-bot "AI Usage Manager": staged allowance alerts only, dedupe in the collector
+bot "AI Usage Manager": allowance threshold/exhaustion alerts only, dedupe in the collector
 state file (`data/collector-state.json`),
 config only in khpi5 `data/settings.json`.
 

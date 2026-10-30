@@ -29,6 +29,14 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+Before that first `up`, create the bind-mount sources as your own user —
+Docker creates missing sources as `root:root`, and the containers run as
+`PUID`/`PGID` (default 1000) and could not write them:
+
+```bash
+mkdir -p data ~/.claude ~/.config/opencode ~/.cache/opencode ~/.local/share/opencode
+```
+
 - Dashboard: `http://<host>:8099/`
 - Collector log (JSON lines): `docker compose logs -f collector`
 - A fresh stack shows **"Awaiting first sync"** until the collector has at
@@ -161,3 +169,5 @@ Kept for revival only — the watchdog cron is gone, so if you re-enable the
 Everything persistent lives in `./data/` (settings, history, qwen browser
 profile). Back up the directory and you can recreate the stack anywhere
 (except the host credential files, which are intentionally not part of it).
+The services write as `PUID`/`PGID` (default 1000); if you restore a backup
+created by root, `chown` it back to the stack user before starting the stack.

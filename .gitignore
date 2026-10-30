@@ -1,4 +1,5 @@
-data/
+data/*
+!data/.gitkeep
 .env
 *.log
 collector/state.json
