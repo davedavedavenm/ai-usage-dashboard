@@ -807,6 +807,13 @@ per-key quota endpoint (`GET /api/profile/model-usage` on
 Radeon allowance card is ever wanted; it needs an `rc-` API key and is
 deliberately not wired today.
 
+Re-verified 2026-10-30: `GET /radeon/api/tokenfactory/load` still answers
+HTTP 200 with `{models:{...},scope:"fleet"}` and `cache-control: no-store`;
+the official Swagger lists the same route, plus `/api/tokenfactory/model`
+(needs `?id=`) and `/api/profile/model-usage` (session, 401 anonymously).
+The live model set fluctuates (8-10 rows across probes), so the card follows
+the feed rather than a fixed catalogue; that is expected, not stale data.
+
 ## Dashboard mono font stack leads with Consolas - Active (2026-10-03)
 
 Every card value (hero %, window tags, reset times, mini labels, state chips,
