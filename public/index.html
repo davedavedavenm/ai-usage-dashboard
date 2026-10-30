@@ -40,6 +40,49 @@ body::after { display: none; } /* no scanlines */
 button { font-family: inherit; }
 a { color: inherit; }
 
+/* ---------- compact top bar ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--panel-edge);
+  padding: 10px 0 12px;
+}
+.topbar .brand h1 { font-size: 1.9rem; }
+.top-status { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.top-status .chip { padding: 5px 8px; font-size: .66rem; }
+#nextResetChip {
+  display: inline-block; max-width: 32rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.topclock { font-family: var(--font-mono); font-size: .78rem; color: var(--ink-dim); padding: 0 4px; }
+.top-actions .viewtoggle button { padding: 5px 8px; font-size: .6rem; }
+.topmenu-wrap { position: relative; }
+.menu-btn {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--panel-edge); border-radius: 4px; background: rgba(255,255,255,0.02);
+  color: var(--ink); font: 1rem/1 var(--font-mono); cursor: pointer;
+}
+.menu-btn:hover { border-color: var(--ink-dim); }
+.menu-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+  min-width: 190px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--panel-edge);
+  border-radius: 8px; box-shadow: 0 12px 30px rgba(0,0,0,.45);
+}
+.menu-panel[hidden] { display: none; }
+.menu-panel button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 4px;
+  color: var(--ink); font: .7rem var(--font-mono);
+  padding: 8px 10px; cursor: pointer;
+}
+.menu-panel button:hover { background: rgba(255,255,255,0.05); }
+.menu-note {
+  margin-top: 4px; padding: 8px 10px 4px;
+  border-top: 1px solid var(--panel-edge);
+  font: .55rem/1.5 var(--font-mono); color: var(--ink-faint);
+}
+
 /* ---------- masthead ---------- */
 .masthead {
   display: flex; align-items: flex-end; justify-content: space-between;
@@ -487,6 +530,15 @@ footer {
   .wrap { padding: 16px 12px 36px; }
   .grid { grid-template-columns: 1fr; }
   .card:not(.wide) { min-height: 0; }
+  .topbar { gap: 8px; padding: 8px 0 10px; }
+  .topbar .brand h1 { font-size: 1.7rem; }
+  .topbar .tag { display: none; }
+  .top-status { order: 3; width: 100%; flex-wrap: wrap; }
+  .top-actions { order: 2; margin-left: auto; }
+  .topclock { display: none; }
+  .topbar .viewtoggle button { font-size: .55rem; padding: 5px 6px; }
+  #nextResetChip { display: block; max-width: 100%; white-space: normal; }
+  .top-status .chip { font-size: .62rem; }
   .masthead { align-items: flex-start; }
   .masthead-side { width: 100%; justify-content: space-between; }
   .viewtoggle button { font-size: .56rem; padding: 5px 7px; }
@@ -515,38 +567,41 @@ footer {
 </head>
 <body>
 <div class="wrap">
-  <header class="masthead">
+  <header class="topbar">
     <div class="brand">
       <h1>AI <em>Allowance</em></h1>
       <span class="tag">Homelab</span>
     </div>
-    <div class="masthead-side">
+    <div class="top-status">
+      <span class="chip" id="syncChip"><span class="led"></span><span id="syncText">NO DATA</span></span>
+      <span class="chip" id="usableChip" hidden></span>
+      <span class="chip" id="nextResetChip" hidden></span>
+    </div>
+    <div class="top-actions">
+      <span class="topclock" id="clock">--:--</span>
+      <button class="chip btn-sync" id="btnSync" onclick="triggerCollect()" title="Trigger immediate quota probe">
+        <span class="sync-icon">⟳</span> <span id="btnSyncText">Sync</span>
+      </button>
       <div class="viewtoggle" role="group" aria-label="Dashboard style">
         <button type="button" data-view="a" aria-pressed="true">Instrument</button>
         <button type="button" data-view="c" aria-pressed="false">Signal</button>
       </div>
-      <div class="readout">
-        <div class="clock" id="clock">--:--:--</div>
-        <div class="date" id="date">&nbsp;</div>
+      <div class="topmenu-wrap">
+        <button class="menu-btn" id="menuBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Open menu">⋯</button>
+        <div class="menu-panel" id="menuPanel" hidden>
+          <button type="button" onclick="switchTab('dash')">Dashboard</button>
+          <button type="button" onclick="switchTab('settings')">Settings</button>
+          <button type="button" onclick="triggerCollect()">Sync now</button>
+          <div class="menu-note">Collector checks every 10 min · live provider APIs</div>
+        </div>
       </div>
     </div>
   </header>
-  <div class="syncline">
-    <span class="chip" id="syncChip"><span class="led"></span><span id="syncText">NO DATA</span></span>
-    <button class="chip btn-sync" id="btnSync" onclick="triggerCollect()" title="Trigger immediate quota probe">
-      <span class="sync-icon">⟳</span> <span id="btnSyncText">Sync Now</span>
-    </button>
-    <span class="chip info-chip"><span class="led" style="background:var(--amber)"></span>Checks every 10 minutes</span>
-    <span class="chip info-chip">Live provider APIs</span>
-    <span class="chip" id="usableChip" hidden></span>
-    <span class="chip" id="nextResetChip" hidden></span>
-  </div>
-  <div class="tabs">
-    <button class="tab active" id="tabDash" onclick="switchTab('dash')">Dashboard</button>
-    <button class="tab" id="tabSet" onclick="switchTab('settings')">Settings</button>
-  </div>
   <main class="grid" id="grid"></main>
   <section class="settings" id="settingsPanel">
+    <div class="srow" style="margin-top:0;margin-bottom:4px">
+      <button class="sbtn secondary" type="button" onclick="switchTab('dash')">← Dashboard</button>
+    </div>
     <div class="sblock">
       <div class="shead">Qwen · Alibaba Token Plan</div>
       <div class="ssub">legacy fallback: browser session capture (primary source is the AccessKey gateway call)</div>
@@ -975,7 +1030,7 @@ function render(record) {
     const usable = worst.filter(w => w.p > 0).length;
     usableChip.hidden = false;
     usableChip.className = "chip" + (usable === 0 ? " bad" : usable < worst.length ? " warn" : "");
-    usableChip.innerHTML = `Usable now <b style="margin-left:6px">${usable}/${worst.length}</b>`;
+    usableChip.innerHTML = `Usable ${usable}/${worst.length}`;
   } else {
     usableChip.hidden = true;
   }
@@ -992,7 +1047,8 @@ function render(record) {
     resets.sort((a, b) => a.t - b.t);
     const r = resets[0];
     chipEl.hidden = false;
-    chipEl.innerHTML = `Next reset: ${esc(r.label)} ${esc(r.name)} · in <span class="cd" data-at="${esc(r.iso)}">—</span> (${fmtClock(r.iso)})`;
+    chipEl.innerHTML = `Next: ${esc(r.label)} ${esc(r.name)} · <span class="cd" data-at="${esc(r.iso)}">—</span>`;
+    chipEl.title = `Next reset: ${r.label} ${r.name} at ${fmtClock(r.iso)}`;
   } else {
     chipEl.hidden = true;
   }
@@ -1026,7 +1082,7 @@ function updateSync(record) {
     chip.className = "chip bad"; text.textContent = "No data yet"; return;
   }
   const ageMin = Math.floor((Date.now() - record.receivedAt) / 60000);
-  const minWord = (n) => n + (n === 1 ? " minute" : " minutes");
+  const minWord = (n) => n + "m";
   if (ageMin > 60) { chip.className = "chip bad"; text.textContent = `Out of date · ${minWord(ageMin)}`; }
   else if (ageMin > 20) { chip.className = "chip warn"; text.textContent = `Out of date · ${minWord(ageMin)}`; }
   else { chip.className = "chip"; text.textContent = `Updated ${ageMin < 1 ? "just now" : minWord(ageMin) + " ago"}`; }
@@ -1043,9 +1099,8 @@ function tickCountdowns() {
 }
 
 function tickClock() {
-  const n = new Date();
-  document.getElementById("clock").textContent = n.toLocaleTimeString([], { hour12: false });
-  document.getElementById("date").textContent = n.toLocaleDateString([], { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  const el = document.getElementById("clock");
+  if (el) el.textContent = new Date().toLocaleTimeString([], { hour12: false });
 }
 
 async function refresh() {
@@ -1069,17 +1124,38 @@ async function refresh() {
 function switchTab(which) {
   const dash = document.getElementById("grid");
   const set = document.getElementById("settingsPanel");
-  const td = document.getElementById("tabDash");
-  const ts = document.getElementById("tabSet");
   const empty = document.getElementById("empty");
   const isSet = which === "settings";
   set.classList.toggle("show", isSet);
-  td.classList.toggle("active", !isSet);
-  ts.classList.toggle("active", isSet);
   dash.style.display = isSet ? "none" : "";
   empty.style.display = isSet ? "none" : "";
-  document.querySelector(".syncline").style.display = isSet ? "none" : "";
+  closeMenu();
   if (isSet) loadSettings();
+}
+
+function closeMenu() {
+  const panel = document.getElementById("menuPanel");
+  const button = document.getElementById("menuBtn");
+  if (panel) panel.hidden = true;
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+
+function initMenu() {
+  const button = document.getElementById("menuBtn");
+  const panel = document.getElementById("menuPanel");
+  if (!button || !panel) return;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = panel.hidden;
+    panel.hidden = !open;
+    button.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("click", (event) => {
+    if (!panel.hidden && !panel.contains(event.target) && event.target !== button) closeMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
+  });
 }
 
 async function loadSettings() {
@@ -1169,6 +1245,7 @@ async function triggerCollect() {
   const btn = document.getElementById("btnSync");
   const text = document.getElementById("btnSyncText");
   const icon = btn.querySelector(".sync-icon");
+  closeMenu();
   btn.disabled = true;
   if (icon) icon.classList.add("spinning");
   text.textContent = "Syncing…";
@@ -1180,7 +1257,7 @@ async function triggerCollect() {
     console.error("Trigger collect failed", e);
   } finally {
     if (icon) icon.classList.remove("spinning");
-    text.textContent = "Sync Now";
+    text.textContent = "Sync";
     btn.disabled = false;
   }
 }
@@ -1263,6 +1340,7 @@ async function testTg() {
 }
 
 initView();
+initMenu();
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(tickCountdowns, 1000);
