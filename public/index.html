@@ -36,7 +36,7 @@ body[data-view="c"] {
   background: linear-gradient(180deg, #0a0d12, #07080b);
 }
 body::after { display: none; } /* no scanlines */
-.wrap { max-width: 1640px; margin: 0 auto; padding: 24px 22px 52px; }
+.wrap { max-width: 1800px; margin: 0 auto; padding: 24px 22px 52px; }
 button { font-family: inherit; }
 a { color: inherit; }
 
@@ -120,7 +120,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 /* ---------- A · cards ---------- */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 .card {
@@ -136,6 +136,9 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .card.wide { grid-column: 1 / -1; }
+/* Keep the six provider cards the same size across the two desktop rows.
+   The fleet card stays auto-height and full-width below them. */
+.card:not(.wide) { min-height: 300px; }
 .card.dead { filter: saturate(.25) brightness(.8); }
 .card.err { border-color: rgba(242,93,93,.45); }
 .card.degraded { border-color: rgba(242,169,59,.45); }
@@ -427,9 +430,14 @@ footer {
 }
 
 /* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 760px) {
   .wrap { padding: 16px 12px 36px; }
   .grid { grid-template-columns: 1fr; }
+  .card:not(.wide) { min-height: 0; }
   .masthead { align-items: flex-start; }
   .masthead-side { width: 100%; justify-content: space-between; }
   .viewtoggle button { font-size: .56rem; padding: 5px 7px; }
