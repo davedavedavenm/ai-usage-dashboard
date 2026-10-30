@@ -40,6 +40,7 @@ docker compose up -d --build
 |---|---|---|
 | `INGEST_KEY` | — | shared secret between collector and server |
 | `CREDENTIALS_ROOT` | — | host home dir whose credential subtrees get mounted |
+| `PUID` / `PGID` | `1000` / `1000` | uid/gid the containers run as; must own `CREDENTIALS_ROOT` and `./data` |
 | `DASHBOARD_PORT` | `8099` | published dashboard port |
 | `QWEN_UI_BIND` / `QWEN_UI_PORT` | `127.0.0.1` / `3099` | Qwen desktop bind/port (set the bind to your LAN IP to use it remotely) |
 | `QWEN_UI_BIND2` / `QWEN_UI_PORT2` | `127.0.0.1` / `3098` | optional second bind (e.g. tailnet IP + port) |
@@ -97,12 +98,13 @@ CDP grab / cookie, then the token-plan API key (availability only, amber
 ## 4. Telegram alerts
 
 Create a bot with @BotFather, send it `/start`, then use the dashboard →
-**Settings** tab → *Send test message* (it discovers your chat id), or set
+**Settings** tab → *Send test message* (save the bot token and chat id first), or set
 `AIUD_TG_BOT_TOKEN`/`AIUD_TG_CHAT_ID` in `.env`.
 
-Alerts are **staged**: 🟡 50% → 🟠 30% → 🔴 threshold (default 15%) → 🚨 0%,
-one message per stage per provider window per reset period — you're warned
-early, never bombarded. Allowance thresholds are the only alert source.
+Alerts cover two stages per provider window: 🔴 when it falls below your
+threshold (default 15%) and 🚨 when it reaches 0%, once per reset period.
+Reset warnings fire 24h and 12h before a durable window resets while
+allowance remains. Allowance thresholds are the only alert source.
 
 ## 5. Troubleshooting
 
@@ -131,7 +133,7 @@ anything that did not report. A missing card means it was skipped, not lost.
 ```bash
 curl -s http://127.0.0.1:8099/api/health        # {"ok":true,...}
 curl -s http://127.0.0.1:8099/api/quota | head -c 300
-docker ps --format '{{.Names}} {{.Status}}'     # all four containers Up
+docker ps --format '{{.Names}} {{.Status}}'     # both default services Up (the qwen profile adds two more)
 ```
 
 ### The Qwen browser stack (legacy fallback deep dive)

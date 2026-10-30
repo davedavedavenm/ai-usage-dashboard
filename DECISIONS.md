@@ -215,8 +215,10 @@ Settled details (all verified 2026-09-14):
   `*/2 qwen-watchdog` host cron removed — nothing depends on a live console
   session any more. The `qwen` compose profile, CDP grab, keepalive and the
   watchdog script stay in the repo as an off-by-default fallback. The
-  collector's 2-hourly keepalive still logs `SESSION_EXPIRED` against the old
-  cookie (harmless noise) until the browser path is revived.
+  2-hourly keepalive verifies the legacy cookie once and exits 0 with
+  `skipping cookie keepalive` while the AccessKey config is present, so a
+  dead fallback cookie produces one informational log line per run, not an
+  error.
 
 ## Qwen usage moved to a monthly window; collector calls the gateway directly — Active (2026-09-24)
 
@@ -576,11 +578,12 @@ manual: create a new key in OpenCode Console, then on khpi5 run
 `opencode auth login -p opencode-go` and paste it; force a probe with
 `curl -X POST http://127.0.0.1:8099/api/collect`. Two traps: (1) re-authenticating
 in a browser/console or on another machine changes nothing — the collector reads
-only khpi5's `auth.json`; (2) the collector's ChatGPT token rotation rewrites
-that file as root, so a dave-side login can be refused —
-`sudo chown dave:dave ~/.local/share/opencode/auth.json` first. Verified same
-evening: on-demand collect returned rolling/weekly/monthly `ok`, all 7
-providers green.
+only khpi5's `auth.json`; (2) older stacks left that file root-owned because the
+collector ran as uid 0, so a dave-side login could be refused —
+`sudo chown dave:dave ~/.local/share/opencode/auth.json` once before logging in.
+The unprivileged-collector change (2026-10-30, below) prevents new drift, so the
+chown is only a one-time migration step. Verified same evening: on-demand
+collect returned rolling/weekly/monthly `ok`, all 7 providers green.
 
 **OpenCode Go `rate-limited` is an exhausted cap, not a probe failure
 (2026-10-23).** The usage API can answer a window (currently monthly) with
@@ -613,10 +616,11 @@ by design:
 - Bot token + chat id live **only** in khpi5 `data/settings.json` (`telegram`
   object); settable/masked via the Settings tab; never in this repo, never in
   docs. Env fallbacks `AIUD_TG_BOT_TOKEN`/`AIUD_TG_CHAT_ID` exist for testing.
-- Alerts are **staged** per provider-window: 🟡 50% → 🟠 30% → 🔴 threshold
-  (default 15%) → 🚨 0%, deduped in the collector state file
+- Alerts cover the configured near-exhaustion threshold (default 15%) and
+  exhaustion (0%) per provider-window, deduped in the collector state file
   (`data/collector-state.json` in the containerized stack) keyed by window +
-  reset time, so each stage fires once per reset period. Allowance thresholds
+  reset time, so each stage fires once per reset period. The fixed 50%/30%
+  midpoint stages were removed on 2026-09-08 (see below). Allowance thresholds
   are the ONLY alert source — there are deliberately no cookie/session
   "action needed" notifications (retired 2026-08-26).
 - Test channel: Settings tab → *Send test message* (POST `/api/telegram-test`).
@@ -687,19 +691,39 @@ archetype: cron's stripped env hid the `claude` binary).
   so every credential path resolves exactly as on the host. Refresh writes
   go back through the same mounts.
 - Migration from the host-cron era (2026-08-30): the */10 collect and */120
-  keepalive crontab entries were removed; the */2 qwen-watchdog entry stays
-  as the browser backstop only.
+  keepalive crontab entries were removed; the */2 qwen-watchdog entry followed
+  on 2026-09-14 with the browser retirement (see Cron inventory).
+
+## Stack services run as the host user, not root — Active (2026-10-30)
+
+Both services were missing an effective unprivileged user:
+`collector/Dockerfile` had a comment promising one but no `USER` line, so the
+collector ran as uid 0 and rewrote mounted credential files as root.
+`~/.claude/.credentials.json` became `root:root 0600`; the interactive `claude`
+CLI as dave then reported `loggedIn: false`, and the same drift hit
+`~/.cache/opencode/opencode-quota/google-access-tokens.json`,
+`~/.local/share/opencode/.openai-oauth-refresh.json`, and the stack's
+`data/settings.json`, `data/collector-state.json`, `data/bailian/config.json`.
+
+`docker-compose.yml` now sets `user: "${PUID:-1000}:${PGID:-1000}"` on both
+services (the collector image also keeps `USER node` as a plain-`docker run`
+fallback), and `.env.example` documents `PUID`/`PGID`. khpi5's existing
+root-owned files were chowned to `dave:dave` once. Verified after the switch:
+the collector runs as uid 1000, all seven providers stay `ok`, `claude auth
+status` as dave is logged in again, and the credential/cache/data paths remain
+writable.
+
+Do not set `PUID`/`PGID` to a uid that does not own `CREDENTIALS_ROOT` or
+`<stack>/data`; the collector starts but cannot refresh tokens.
 
 ## Cron inventory (khpi5, Europe/London) — Active
 
-```
-*/2 * * * *   cd stacks/ai-usage-dashboard && flock -n /tmp/aiud-qwen-watch.lock bash collector/qwen-watchdog.sh >> data/qwen-watchdog.log 2>&1
-```
-
-The only host cron left. Collect/keepalive scheduling lives inside the
-collector container (see the containerized-collector decision); the watchdog
-force-recreates the qwen containers if CDP dies for 75+ s — with the
-in-container supervisor this rarely fires; keep it for kasmvnc-level death.
+No crontab entries for this stack. Collect/keepalive scheduling lives inside
+the collector container (`runner.mjs`; see the containerized-collector
+decision). The old `*/2 qwen-watchdog.sh` host line was removed on 2026-09-14
+when the console-session path was retired; the script stays in the repo as an
+off-by-default fallback and must be re-added to cron if the `qwen` profile is
+ever revived.
 
 ## keepalive-and-collect.sh no longer exists — Historical
 
@@ -730,9 +754,9 @@ immediately.
 
 ## Outbound webhook alerts supported alongside Telegram — Active (2026-09-05)
 
-In addition to the Telegram bot, staged allowance threshold events (historical midpoint stages below were removed
-on 2026-09-08; only near-exhaustion and exhaustion remain)
-(50% → 30% → 15% → 0%) can optionally dispatch a JSON POST payload to a
+In addition to the Telegram bot, near-exhaustion threshold and exhaustion
+events (the fixed 50%/30% midpoint stages were removed on 2026-09-08) can
+optionally dispatch a JSON POST payload to a
 configured webhook URL (`AIUD_WEBHOOK_URL` or via Settings), allowing direct
 integration with Home Assistant automations or TRMNL sidecars.
 
