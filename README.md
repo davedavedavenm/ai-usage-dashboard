@@ -46,6 +46,8 @@ docker compose up -d --force-recreate
 
 Open `http://<host>:8099/` — the dashboard shows "Awaiting first sync" until
 the collector has credentials to report (see *Connecting accounts* below).
+The header toggle switches between **Instrument** (card grid) and **Signal**
+(full-width bands); the choice is stored in `localStorage`.
 
 Optional profiles:
 
