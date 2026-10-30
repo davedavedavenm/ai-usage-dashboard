@@ -36,7 +36,7 @@ body[data-view="c"] {
   background: linear-gradient(180deg, #0a0d12, #07080b);
 }
 body::after { display: none; } /* no scanlines */
-.wrap { max-width: 1800px; margin: 0 auto; padding: 24px 22px 52px; }
+.wrap { max-width: 2400px; margin: 0 auto; padding: 24px 22px 52px; }
 button { font-family: inherit; }
 a { color: inherit; }
 
@@ -427,6 +427,55 @@ footer {
   font-family: var(--font-mono); font-size: .55rem; color: var(--ink-faint);
   letter-spacing: .1em; text-transform: uppercase;
   display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+
+/* ---------- large widescreen ---------- */
+@media (min-width: 1800px) {
+  .wrap { padding: 32px 32px 64px; }
+  .brand h1 { font-size: 2.8rem; }
+  .readout .clock { font-size: 1.4rem; }
+  .viewtoggle button { font-size: .72rem; padding: 8px 12px; }
+  .syncline { font-size: .82rem; }
+  .card { padding: 24px 26px 20px; border-radius: 16px; }
+  .pname { font-size: 1.35rem; }
+  .psub { font-size: .7rem; }
+  .pstate { font-size: .6rem; padding: 4px 8px; }
+  .bighero { justify-content: space-between; }
+  .heroside { text-align: right; }
+  .bignum { font-size: clamp(4.4rem, 5vw, 6rem); }
+  .bignum small { font-size: 1.35rem; }
+  .wtag2 { font-size: .72rem; }
+  .hreset2 { font-size: .82rem; }
+  .primarybar { height: 9px; }
+  .minis { gap: 8px; }
+  .mini { grid-template-columns: 5.4rem minmax(0, 1fr) 2.6rem auto; gap: 10px; }
+  .mtag { font-size: .7rem; }
+  .mpct { font-size: .78rem; }
+  .mreset { font-size: .64rem; }
+  .mmeter { height: 4px; }
+  .note { font-size: .66rem; }
+  .vline { font-size: .72rem; }
+  .card:not(.wide) { min-height: 360px; }
+  .loadgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 24px; }
+  .loadrow { grid-template-columns: minmax(0, 1fr) 3.2rem auto; }
+  .loadrow .mtag { font-size: .8rem; }
+  .loadrow .mpct { font-size: 1rem; }
+  .loadrow .mreset { font-size: .64rem; }
+  .loadrow .mmeter { height: 6px; }
+  .band { grid-template-columns: 15rem 7.5rem minmax(0, 1fr) 8.5rem; padding: 20px 2px; gap: 6px 22px; }
+  .band-name { font-size: 1.15rem; }
+  .band-sub, .band-window { font-size: .64rem; }
+  .band .bignum { font-size: 3.6rem; }
+  .band .primarybar { height: 8px; }
+  .band-reset { font-size: .72rem; }
+  .band-meta .vline { font-size: .68rem; }
+  .band-minis .mtag { font-size: .62rem; }
+  .band-minis .mpct { font-size: .72rem; }
+  .band-minis .mini { grid-template-columns: 5.6rem minmax(0, 1fr) 2.4rem; }
+  .fleet-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 24px; }
+  .fleet-name, .fleet-pct { font-size: .72rem; }
+  .fleet-item { grid-template-columns: minmax(0, 1fr) 6rem 3.2rem 5rem; }
+  .fleet-label { font-size: .62rem; }
 }
 
 /* ---------- responsive ---------- */
@@ -901,16 +950,13 @@ function render(record) {
   const order = PRIMARY.concat(extra);
   const models = order.map(id => cardModel(id, provs[id]));
 
-  const displayModels = view === "a"
-    ? models.filter(m => m.id !== "radeon-cloud").concat(models.filter(m => m.id === "radeon-cloud"))
-    : models;
   if (view === "c") {
     const fleet = models.find(m => m.id === "radeon-cloud");
     grid.className = "board";
-    grid.innerHTML = models.filter(m => m.id !== "radeon-cloud").map(renderC).join("") + (fleet ? fleetBand(fleet) : "");
+    grid.innerHTML = (fleet ? fleetBand(fleet) : "") + models.filter(m => m.id !== "radeon-cloud").map(renderC).join("");
   } else {
     grid.className = "grid";
-    grid.innerHTML = displayModels.map(renderA).join("");
+    grid.innerHTML = models.map(renderA).join("");
   }
   [...grid.querySelectorAll(".card, .band, .fleet-band")].forEach((c, i) => c.style.animationDelay = (i * 40) + "ms");
 
