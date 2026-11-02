@@ -8,7 +8,7 @@ export const CLAUDE_CREDENTIALS_PATH = process.env.CLAUDE_CREDENTIALS_PATH ||
 const SIDECAR_PATH = process.env.CLAUDE_OAUTH_SIDECAR_PATH ||
   join(homedir(), ".claude", ".oauth-refresh.json");
 
-const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const TOKEN_URL = process.env.CLAUDE_TOKEN_URL || "https://platform.claude.com/v1/oauth/token";
 const CLIENT_IDS = [
   "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
   "https://claude.ai/oauth/claude-code-client-metadata",
@@ -79,6 +79,33 @@ async function tryRefresh(refreshToken, clientId, scope) {
   return { status: res.status, data };
 }
 
+// The token endpoint explains refusals in the body (`invalid_grant`,
+// "Refresh token expired", ...). Keep that text: without it a dead login and a
+// network blip look identical in the collector log (2026-11-02 incident).
+function oauthError(result) {
+  const body = result?.data || {};
+  const code = typeof body.error === "string" ? body.error : "";
+  const description = typeof body.error_description === "string" ? body.error_description : "";
+  const detail = [code, description].filter(Boolean).join(" — ");
+  return detail ? `${result.status} ${detail}` : `HTTP ${result?.status ?? "error"}`;
+}
+
+async function requestTokens(refreshToken, scope) {
+  let last = null;
+  for (const clientId of CLIENT_IDS) {
+    try {
+      last = await tryRefresh(refreshToken, clientId, scope);
+    } catch (e) {
+      return { status: "failed", error: String(e.message || e) };
+    }
+    if (last.status === 200 && last.data) return { status: "ok", result: last };
+    if (last.status === 429) return { status: "rate-limited", result: last };
+    if (last.status === 400 || last.status === 401) continue;
+    break;
+  }
+  return { status: "failed", result: last };
+}
+
 function applyTokens(cred, tokens) {
   const oauth = cred.claudeAiOauth || {};
   const now = Date.now();
@@ -95,6 +122,19 @@ function applyTokens(cred, tokens) {
     oauth.refreshTokenExpiresAt = now + tokens.refresh_token_expires_in * 1000;
   }
   cred.claudeAiOauth = oauth;
+}
+
+// Write the rotated pair onto the freshest on-disk document, but never clobber
+// a rotation another Claude process (CLI, bridge daemon) completed while our
+// request was in flight — that would invalidate their live token.
+function applyFreshTokens(usedToken, tokens) {
+  const fresh = readJson(CLAUDE_CREDENTIALS_PATH);
+  const current = fresh?.claudeAiOauth?.refreshToken;
+  if (current && usedToken && current !== usedToken) return false;
+  const target = fresh && fresh.claudeAiOauth ? fresh : { claudeAiOauth: {} };
+  applyTokens(target, tokens);
+  writeJsonAtomic(CLAUDE_CREDENTIALS_PATH, target);
+  return true;
 }
 
 export async function refreshClaudeTokenIfNeeded({ force = false } = {}) {
@@ -116,7 +156,7 @@ export async function refreshClaudeTokenIfNeeded({ force = false } = {}) {
   }
 
   if (!oauth.refreshToken) {
-    return { ok: false, reason: "no-refresh-token" };
+    return { ok: false, reason: "no-refresh-token", detail: "login was cleared on disk; run claude auth login on the host" };
   }
 
   const sidecar = readSidecar();
@@ -134,29 +174,38 @@ export async function refreshClaudeTokenIfNeeded({ force = false } = {}) {
   writeSidecar({ lastAttemptAt: now });
 
   const scope = credentialScopes(oauth).join(" ");
-  let last = null;
-  for (const clientId of CLIENT_IDS) {
-    last = await tryRefresh(oauth.refreshToken, clientId, scope);
-    if (last.status === 200 && last.data) {
-      applyTokens(cred, last.data);
-      writeJsonAtomic(CLAUDE_CREDENTIALS_PATH, cred);
-      writeSidecar({ lastSuccessAt: now, rateLimitedUntil: 0 });
-      return { ok: true, reason: "refreshed", detail: `new token valid ${Math.round((cred.claudeAiOauth.expiresAt - Date.now()) / 60000)}m` };
+  let usedToken = oauth.refreshToken;
+  let attempt = await requestTokens(usedToken, scope);
+
+  // Refresh tokens rotate: when the interactive CLI or the bridge daemon
+  // refreshes first, our copy is rejected as invalid_grant. Re-read the disk
+  // and retry once with the token that won the race.
+  if (attempt.status === "failed") {
+    const latest = readJson(CLAUDE_CREDENTIALS_PATH)?.claudeAiOauth;
+    if (latest?.refreshToken && latest.refreshToken !== usedToken) {
+      usedToken = latest.refreshToken;
+      attempt = await requestTokens(usedToken, credentialScopes(latest).join(" "));
     }
-    if (last.status === 429) {
-      writeSidecar({ rateLimitedUntil: now + RATE_LIMIT_COOLDOWN_MS });
-      return { ok: false, reason: "rate-limited", detail: "token endpoint returned HTTP 429" };
-    }
-    if (last.status === 400 || last.status === 401) {
-      continue;
-    }
-    break;
   }
-  return {
-    ok: false,
-    reason: "refresh-failed",
-    detail: last ? `token endpoint HTTP ${last.status}` : "no endpoint tried",
-  };
+
+  if (attempt.status === "ok") {
+    const written = applyFreshTokens(usedToken, attempt.result.data);
+    writeSidecar({ lastSuccessAt: Date.now(), rateLimitedUntil: 0, lastFailure: null });
+    const expiresAt = readJson(CLAUDE_CREDENTIALS_PATH)?.claudeAiOauth?.expiresAt;
+    const detail = written
+      ? `new token valid ${Math.round(((expiresAt || Date.now()) - Date.now()) / 60000)}m`
+      : "another process had already rotated the token";
+    return { ok: true, reason: written ? "refreshed" : "rotated-elsewhere", detail };
+  }
+
+  if (attempt.status === "rate-limited") {
+    writeSidecar({ rateLimitedUntil: now + RATE_LIMIT_COOLDOWN_MS });
+    return { ok: false, reason: "rate-limited", detail: "token endpoint returned HTTP 429" };
+  }
+
+  const detail = attempt.error || oauthError(attempt.result);
+  writeSidecar({ lastFailureAt: now, lastFailure: detail.slice(0, 200) });
+  return { ok: false, reason: "refresh-failed", detail };
 }
 
 export async function refreshClaudeTokenForced() {

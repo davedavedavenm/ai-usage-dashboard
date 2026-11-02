@@ -85,6 +85,40 @@ was simply at 0% until Monday. `collect.mjs` now also queries Anthropic's
 `https://api.anthropic.com/api/oauth/usage` directly using the token refreshed
 by `claude-token.mjs` (falling back to the CLI with its timeout patched to 15 s).
 
+## The Claude login dies on a timer, and the refresher must say why — Active (2026-11-02)
+
+On 2026-11-02 the Claude card went `NOT CONNECTED` at 15:00 UTC and stayed
+that way. Evidence chain: last good probe 14:50:11; the refresher's only
+attempt after the stored refresh-token expiry was 14:50:07 (it wakes 30 min
+before the 8 h *access* token ends); `~/.claude/.credentials.json` was
+rewritten logged-out (empty `accessToken`/`refreshToken`, `expiresAt: 0`) at
+15:00:09 by the host Claude Code daemon; `claude auth status` now answers
+`loggedIn: false` and the quota CLI `auth_status: unauthenticated`.
+
+`refreshTokenExpiresAt` in the file read 09:45:38 that morning. The Claude Code
+2.1.260 binary stamps *login* time + 30 days (`upe=2592000000`) when the token
+endpoint sends no `refresh_token_expires_in`, and refresh grants never move
+that stamp — so a grant that rotates every 8 h still dies ~30 days after the
+last `claude auth login`. A rotation race with the host's long-lived Claude
+Code daemons (`~/.claude/remote/srv/... --serve/--bridge`, which refresh the
+same file) is the other candidate; the leftover state cannot distinguish them.
+
+What changed so the next one is diagnosable:
+- `claude-token.mjs` keeps the endpoint's `error`/`error_description` in
+  `~/.claude/.oauth-refresh.json` (`lastFailure`), retries once when the on-disk
+  refresh token changed under it (rotation race), and refuses to overwrite a
+  token another process just rotated. Network errors return, they no longer throw.
+- `collect.mjs` logs `claudeAuth` on the collect line when the refresher did
+  anything but confirm `fresh`, and a skipped `anthropic` now names the login
+  problem instead of saying "no usable entries in CLI output".
+
+The 30-day cap itself cannot be renewed from the collector. The repair is one
+interactive `claude auth login` on khpi5 (run it in tmux, open the printed
+`claude.com/cai/oauth/authorize` URL, paste the code back — the redirect is
+hosted at `platform.claude.com`, so no SSH tunnel is involved), then the card
+recovers on the next 10-minute run. Never copy `~/.claude` credentials between
+machines: rotation makes one copy kill the other.
+
 ## `reset_at` is optional when parsing CLI status output — Active
 
 `opencode-quota` emits windows like

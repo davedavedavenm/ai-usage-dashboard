@@ -945,6 +945,10 @@ async function main() {
   const state = readState();
   const providers = {};
   const skipped = {};
+  // Set when the Claude token refresher did anything but confirm a fresh
+  // token; carried into the collect log so a dead login is visible as itself
+  // instead of "no usable entries in CLI output" (2026-11-02 incident).
+  let claudeAuth = "";
   const radeonLoad = fetchRadeonLoad();
   const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(auth), "radeon-cloud": await radeonLoad };
   const dashSettings = readDashboardSettings();
@@ -1003,7 +1007,12 @@ async function main() {
   for (const id of STATUS_PROVIDERS) {
     if (providers[id]) continue;
     if (id === "anthropic") {
-      await refreshClaudeTokenIfNeeded();
+      const refresh = await refreshClaudeTokenIfNeeded();
+      if (refresh.reason !== "fresh") {
+        claudeAuth = refresh.ok
+          ? refresh.reason
+          : `${refresh.reason}${refresh.detail ? ": " + refresh.detail : ""}`;
+      }
       if (state.anthropic429Until > Date.now()) {
         const mins = Math.ceil((state.anthropic429Until - Date.now()) / 60000);
         providers.anthropic = { status: "error", error: `Anthropic quota probe paused after HTTP 429; retry in ~${mins}m.` };
@@ -1043,7 +1052,9 @@ async function main() {
     }
     const r = fetchFromStatus(id, sec);
     if (r.status === "unavailable") {
-      skipped[id] = "no usable entries in CLI output";
+      skipped[id] = id === "anthropic" && claudeAuth
+        ? `Claude login needs attention (${claudeAuth})`
+        : "no usable entries in CLI output";
       continue;
     }
     if (id === "google-antigravity") {
@@ -1091,6 +1102,7 @@ async function main() {
     providers: Object.fromEntries(Object.entries(providers).map(([id, r]) => [id, r.status])),
   };
   if (Object.keys(skipped).length) line.skipped = skipped;
+  if (claudeAuth) line.claudeAuth = claudeAuth;
   console.log(JSON.stringify(line));
   process.exit(res.status === 204 ? 0 : 1);
 }

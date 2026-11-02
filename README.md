@@ -68,15 +68,16 @@ the host (`~/.claude/.credentials.json`, `~/.local/share/opencode/auth.json`,
 at the same paths under `/creds`. One-time setup per provider, then the
 collector auto-refreshes OAuth tokens before every probe.
 
-OAuth logins run on the server and the provider's redirect lands on a
-`localhost` port there, so your browser needs an SSH tunnel:
+OAuth logins run on the server, in two shapes:
+
+**opencode logins** land the provider redirect on a `localhost` port there, so
+your browser needs an SSH tunnel:
 
 ```bash
 # Terminal 1 — start the login on the server:
 ssh your-server
 opencode auth login -p openai          # ChatGPT
 # opencode auth login                  # any provider menu (Google → Antigravity, ...)
-# claude login                         # Anthropic / Claude Code
 
 # it prints a URL like http://localhost:1450/... and waits.
 
@@ -86,7 +87,19 @@ ssh -L 1450:localhost:1450 your-server -N   # use the port from the printed URL
 # Open the printed URL in your browser → callback tunnels back → login completes.
 ```
 
-The collector picks new credentials up on its next 10-minute run.
+**Claude Code** redirects to the hosted `platform.claude.com/oauth/code/callback`,
+so no tunnel is involved — run it on the server (tmux, because it waits on
+stdin), open the printed `claude.com/cai/oauth/authorize` URL anywhere, and
+paste the code it shows back into the waiting prompt:
+
+```bash
+ssh your-server
+tmux new -s claude-login 'claude auth login'
+```
+
+The collector picks new credentials up on its next 10-minute run
+(`docker compose restart collector` forces one). A Claude login lasts about 30
+days (`DECISIONS.md`, 2026-11-02), so expect to redo this roughly monthly.
 
 ### Qwen (Alibaba Token Plan)
 
