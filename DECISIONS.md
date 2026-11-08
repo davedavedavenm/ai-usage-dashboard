@@ -527,6 +527,32 @@ not an entitlement proof. Verified live from khpi5 on 2026-10-30:
   it to suppress the real Argon bucket, and do not revert the summary call to
   the old UA.
 
+## Antigravity quota comes from the daily host; production serves stale buckets — Active (2026-11-08)
+
+Dave: "why is this showing this, but the dashboard is way wrong?" The
+Antigravity "View Usage" panel read Gemini 99% weekly / 97% 5h and G4Argon 90%
+weekly (reset 15 Nov); the dashboard read 100% / 100% / 1% (reset 9 Nov).
+Same account, same project, same `antigravity/cli/1.4.7` UA, both Google
+hosts queried side by side from khpi5 — the daily host is the one the desktop
+client reads, and production is stale:
+
+| bucket | `cloudcode-pa` (production) | `daily-cloudcode-pa` | desktop panel |
+|---|---|---|---|
+| `gemini-weekly` | 100%, reset 19:50Z | 98.4%, reset 19:09Z | 99%, 15 Nov |
+| `gemini-5h` | 100%, reset 00:50Z | 96.8%, reset 00:09Z | 97%, 4h 27m |
+| `3p-weekly` | 0%, reset 12 Nov | 0%, reset 12 Nov | 0%, 3d 11h |
+| `gemini-argon-wtu-weekly` | 0.84%, reset 9 Nov 17:57Z | 85%, reset 15 Nov 18:57Z | 90%, 6d 23h |
+
+Production's Gemini per-model `quotaInfo` is pinned at 1.0 (the known
+placeholder shape) while daily tracks the panel, so this is not a model/plan
+difference. Fix: `google-plan.mjs` queries `daily-cloudcode-pa...` first for
+`retrieveUserQuotaSummary` (production remains fallback), and the Dockerfile
+patches the pinned CLI's `GOOGLE_QUOTA_API_URL` in `google.js` to the daily
+host so G3Flash/G3Image stop reading the frozen snapshot. The Argon group is
+still UA-gated (`antigravity/cli/...`), so the summary fallback stays. Do not
+revert to production because it looks canonical — re-check against a fresh
+desktop panel reading first.
+
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 
 Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports

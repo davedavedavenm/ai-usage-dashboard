@@ -99,7 +99,9 @@ host cron was removed 2026-09-14.
   newer `v1internal:retrieveUserQuotaSummary` endpoint with the
   `antigravity/cli/1.4.7` User-Agent publishes a real `Gemini 4 Argon` weekly
   bucket even while `loadCodeAssist` answers free-tier; the collector uses it
-  for the G4Argon row (DECISIONS.md 2026-10-30). Z.ai shares the family: limit rows
+  for the G4Argon row (DECISIONS.md 2026-10-30) — via the
+  `daily-cloudcode-pa` host, because production serves stale buckets
+  (DECISIONS.md 2026-11-08). Z.ai shares the family: limit rows
   are keyed by `unit` (3 = 5 h, 6 = weekly), not by the `type` name, which Z.ai has
   already renamed once. Z.ai publishes no monthly quota; the plan renewal date
   comes from `biz/subscription/list` with the same key (the live plan is annual),

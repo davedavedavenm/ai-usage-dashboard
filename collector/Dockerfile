@@ -63,6 +63,20 @@ RUN node -e '\
   fs.writeFileSync(af, as.replace(toBefore, toAfter)); \
   console.log("patched CLAUDE_COMMAND_TIMEOUT_MS 3000 -> 15000 in " + af);'
 
+# Antigravity per-model quota: the pinned CLI asks production, which serves a
+# frozen 100% Gemini snapshot (2026-11-08), while Antigravity's own client and
+# the live numbers come from the daily host. Point the CLI at daily so G3Flash/
+# G3Image track real usage. Guard fails the build if the constant moves.
+RUN node -e '\
+  const fs = require("fs"); \
+  const f = "node_modules/@slkiser/opencode-quota/dist/lib/google.js"; \
+  const before = "const GOOGLE_QUOTA_API_URL = \"https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels\";"; \
+  const after = "const GOOGLE_QUOTA_API_URL = \"https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels\";"; \
+  const s = fs.readFileSync(f, "utf8"); \
+  if (!s.includes(before)) { console.error("PATCH GUARD FAILED: GOOGLE_QUOTA_API_URL not found in " + f); process.exit(1); } \
+  fs.writeFileSync(f, s.replace(before, after)); \
+  console.log("patched GOOGLE_QUOTA_API_URL -> daily host in " + f);'
+
 COPY *.mjs ./
 
 # Unprivileged runtime user; HOME is the mounted creds root so every

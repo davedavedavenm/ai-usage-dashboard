@@ -25,7 +25,17 @@ const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loa
 // The summary endpoint is the only one that publishes the Gemini 4 Argon
 // bucket. It also requires the newer AGY client UA; the old UA returns only
 // the Claude/GPT family (verified 2026-10-30).
-const QUOTA_SUMMARY_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
+//
+// Host order matters: the daily host is what Antigravity's own client reads,
+// and production can serve stale buckets. Verified live 2026-11-08 with the
+// same token/project/UA: production answered G4Argon 0.84% with a 22 h reset
+// while daily answered 85% with the 15 Nov weekly reset shown in the desktop
+// "View Usage" panel; production's Gemini buckets were frozen at 100% while
+// daily matched the panel. Production stays only as a fallback.
+export const QUOTA_SUMMARY_URLS = [
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+  "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+];
 const QUOTA_SUMMARY_UA = "antigravity/cli/1.4.7 darwin/amd64";
 const USER_AGENT = "antigravity/1.11.9 linux/x64";
 const PROBE_TIMEOUT_MS = 15000;
@@ -121,18 +131,20 @@ export async function probeGooglePlan() {
     if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token" };
 
     try {
-      const summaryResponse = await post(QUOTA_SUMMARY_URL, {
-        headers: {
-          Authorization: "Bearer " + token.access_token,
-          "Content-Type": "application/json",
-          "User-Agent": QUOTA_SUMMARY_UA,
-          "x-activity-request-id": randomUUID(),
-        },
-        body: JSON.stringify({ project: account.projectId }),
-      });
-      if (summaryResponse.ok) {
+      for (const summaryUrl of QUOTA_SUMMARY_URLS) {
+        const summaryResponse = await post(summaryUrl, {
+          headers: {
+            Authorization: "Bearer " + token.access_token,
+            "Content-Type": "application/json",
+            "User-Agent": QUOTA_SUMMARY_UA,
+            "x-activity-request-id": randomUUID(),
+          },
+          body: JSON.stringify({ project: account.projectId }),
+        });
+        if (!summaryResponse.ok) continue;
         const summary = await summaryResponse.json().catch(() => null);
         argon = antigravityQuotaSummaryArgon(summary);
+        if (argon) break;
       }
     } catch {
       // The plan probe still works without the summary; the card falls back to
