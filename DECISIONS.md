@@ -621,6 +621,20 @@ the stable window ids (history and alert dedupe keep working):
 - Carbon is deliberately not shown; an absent Hydrogen row means the daily
   catalogue did not report it, never that the model is withdrawn.
 
+## Dashboard order and the Gemini hero model — Active (2026-11-12)
+
+Dave asked for the Gemini card to sit with the other AI subscription cards
+(swap with Z.ai) and for **Gemini Hydrogen** to be the card's default/hero
+model so it is the number he sees first; Argon stays visible as one of the
+mini bar rows. `PRIMARY` now orders Radeon Cloud, Claude, ChatGPT, Gemini,
+OpenCode Go, Z.ai, Qwen. `antigravityHeroEntry()` prefers `agy-g4hydrogen` and
+falls back to the previous lowest-Gemini binding when Hydrogen is absent.
+
+The card's low-allowance state, page title and "Usable" chip still use
+`antigravityBindingEntry` (the tightest Gemini window), so a low Argon bar
+keeps its warning even while the Hydrogen hero reads healthy. Alerts are
+unchanged (tightest window per provider).
+
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 
 Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports

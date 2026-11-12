@@ -714,7 +714,7 @@ const META = {
   copilot:              { name: "Copilot",           sub: "GitHub",                accent: "#94a3b8" },
   xai:                  { name: "xAI",               sub: "SuperGrok",             accent: "#f472b6" },
 };
-const PRIMARY = ["radeon-cloud", "anthropic", "openai", "zai", "opencode-go", "google-antigravity", "alibaba-coding-plan"];
+const PRIMARY = ["radeon-cloud", "anthropic", "openai", "google-antigravity", "opencode-go", "zai", "alibaba-coding-plan"];
 const FALLBACK = { name: "—", sub: "", accent: "#77808f" };
 let state = null;
 
@@ -797,11 +797,18 @@ function sortWindows(a, b) {
   const pb = WIN_ORDER[b.window] ?? 9;
   return (pa - pb) || (a.name || "").localeCompare(b.name || "");
 }
-// The Antigravity card leads with the binding Gemini window: the lowest
-// non-Claude/GPT allowance (G3Flash, G3Image, G4Argon). Claude/GPT stay out of
-// the hero so a 0% Claude window cannot make the whole Gemini plan look dead
-// (2026-09-05 decision); Argon is a Gemini model and must be able to lead when
-// it is the tightest window (2026-10-30).
+// Dave's default Antigravity model is Gemini Hydrogen (2026-11-12), so the
+// hero number follows that model whenever Google reports it. The card's
+// low-allowance state still follows the tightest Gemini window below, so a
+// nearly-exhausted Argon bar cannot be hidden by a healthy Hydrogen hero.
+function antigravityHeroEntry(percents) {
+  const all = percents || [];
+  return all.find(e => /^agy-g4hydrogen$/i.test(e.window || "")) || antigravityBindingEntry(all);
+}
+
+// The binding window is the lowest non-Claude/GPT allowance (Gemini Flash,
+// Gemini Image, Gemini Hydrogen, G4Argon). Claude/GPT stay out of it so a 0%
+// Claude window cannot make the whole Gemini plan look dead (2026-09-05).
 function antigravityBindingEntry(percents) {
   const all = percents || [];
   const gemini = all.filter(e => !/claude|gpt/i.test(`${e.name} ${e.window}`));
@@ -834,7 +841,7 @@ function cardModel(id, prov) {
   let hero = null;
   if (percents.length) {
     if (id === "google-antigravity") {
-      hero = antigravityBindingEntry(percents);
+      hero = antigravityHeroEntry(percents);
     } else {
       // An exhausted window flagged by the provider itself is the honest hero
       // even when a shorter window still has allowance.
