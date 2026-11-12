@@ -283,6 +283,38 @@ export function antigravityQuotaSummaryArgon(body) {
   return null;
 }
 
+// The summary's weekly buckets are the durable plan allowances. The 5h buckets
+// are already represented by the per-model rows from fetchAvailableModels, and
+// Argon has its own entry, so this returns only the plan-level weekly rows that
+// the card would otherwise hide (verified live 2026-11-12: Gemini weekly 74.4%
+// left while every per-model row read 100%).
+export function antigravityQuotaSummaryWeekly(body) {
+  const groups = Array.isArray(body?.groups) ? body.groups : [];
+  const out = [];
+  for (const group of groups) {
+    if (!group) continue;
+    const groupName = String(group.displayName || "");
+    const buckets = Array.isArray(group.buckets) ? group.buckets : [];
+    for (const bucket of buckets) {
+      if (!bucket || bucket.disabled) continue;
+      const bucketId = String(bucket.bucketId || "");
+      const bucketName = String(bucket.displayName || "");
+      if (!/weekly/i.test(bucketId) && !/weekly/i.test(bucketName)) continue;
+      if (/argon/i.test(groupName) || /argon/i.test(bucketId)) continue;
+      if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
+      const is3p = /claude|gpt|3p/i.test(groupName) || /(?:^|-)3p(?:-|$)/i.test(bucketId);
+      out.push({
+        name: is3p ? "Claude/GPT weekly" : "Gemini weekly",
+        renderType: "percent",
+        percentRemaining: Math.round(Math.max(0, Math.min(1, bucket.remainingFraction)) * 100),
+        resetAt: typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : undefined,
+        window: is3p ? "agy-3p-weekly" : "agy-gemini-weekly",
+      });
+    }
+  }
+  return out;
+}
+
 // Fallback when the quota-summary endpoint does not return an Argon bucket.
 // The old fetchAvailableModels / retrieveUserQuota path omits Argon, but that
 // is an endpoint limitation, not proof the account lacks the model. Keep the

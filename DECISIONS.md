@@ -553,6 +553,40 @@ still UA-gated (`antigravity/cli/...`), so the summary fallback stays. Do not
 revert to production because it looks canonical — re-check against a fresh
 desktop panel reading first.
 
+## Antigravity card publishes the plan-level weekly buckets — Active (2026-11-12)
+
+The quota-summary call added for Argon (2026-10-30) also returns the durable
+plan allowances, but only the Argon bucket was read. On 2026-11-12 the live
+summary read:
+
+| bucket | remaining | reset |
+|---|---|---|
+| `gemini-weekly` | 74.4% | 15 Nov 19:09:05Z |
+| `gemini-5h` | 100% | sample time + 5 h |
+| `3p-weekly` | 100% | 19 Nov 07:21:22Z |
+| `3p-5h` | 100% | sample time + 5 h |
+| `gemini-argon-wtu-weekly` | 13.3% | 15 Nov 18:57:30Z |
+
+The per-model rows from `fetchAvailableModels` only carry the 5 h buckets, so
+the card showed G3Flash/G3Image/Claude at 100% and Argon at 13% while the real
+Gemini weekly allowance was 74.4%. That only looked harmless because Argon was
+the lowest row; after Argon resets the card could read 100% with a weekly bucket
+mostly used.
+
+**Decision:** `antigravityQuotaSummaryWeekly()` publishes `gemini-weekly` and
+`3p-weekly` as `Gemini weekly` / `Claude/GPT weekly` rows. The 5 h buckets stay
+represented by the existing per-model rows and are not duplicated. Gemini weekly
+participates in the hero and alerts; Claude/GPT weekly stays out of both under
+the existing 2026-09-05 Claude/GPT rule. The daily host is still the source
+(2026-11-08) and the constant-full annotation is still computed before the
+weekly rows are appended.
+
+The per-model 5 h and OpenCode Go rolling windows are provider-stamped
+`reset = sample time + 5 h` while unused. The dashboard now labels those
+`rolling` instead of showing a fixed clock time; the few-second drift between a
+collect and a probe is expected and is not an accuracy bug. Do not shorten the
+10-minute cadence to chase it.
+
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 
 Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports

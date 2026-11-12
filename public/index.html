@@ -766,7 +766,10 @@ function sparkSVG(id) {
 
 function windowTag(w, name) {
   let tag;
-  if (/5h|fivehour|rolling/i.test(w || "")) tag = "Last 5 hours";
+  // The plan-level weekly rows would both collapse to "This week"; keep the
+  // family name so Gemini weekly and Claude/GPT weekly stay distinguishable.
+  if (/^agy-(?:gemini|3p)-weekly$/i.test(w || "")) tag = (name || "This week");
+  else if (/5h|fivehour|rolling/i.test(w || "")) tag = "Last 5 hours";
   else if (/weekly/i.test(w || "")) tag = "This week";
   else if (/monthly/i.test(w || "")) tag = "This month";
   else if (/mcp|tool/i.test(w || "")) tag = "Tools (MCP)";
@@ -774,7 +777,18 @@ function windowTag(w, name) {
   if (/\(limited\)/i.test(name || "")) tag += " · limited";
   return tag;
 }
-const WIN_ORDER = { "5h": 0, fiveHour: 0, rolling: 0, weekly: 1, monthly: 2, mcp: 3 };
+const WIN_ORDER = {
+  "5h": 0, fiveHour: 0, rolling: 0,
+  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0,
+  weekly: 1, "agy-gemini-weekly": 1, "agy-3p-weekly": 1, "agy-g4argon": 1,
+  monthly: 2, mcp: 3,
+};
+// OpenCode Go and the Antigravity per-model 5h buckets stamp reset = sample
+// time + 5h while the window is unused, so the timestamp moves with every
+// collect. Mark those instead of presenting them as a fixed clock time.
+function isRollingWindow(w) {
+  return /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|claude)$/i.test(w || "");
+}
 function sortWindows(a, b) {
   const pa = WIN_ORDER[a.window] ?? 9;
   const pb = WIN_ORDER[b.window] ?? 9;
@@ -853,7 +867,10 @@ const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 
 function miniA(e, capped) {
   const p = clampPct(e.percentRemaining);
-  const reset = e.resetAt ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>` : "rolling";
+  const rolling = isRollingWindow(e.window);
+  const reset = e.resetAt
+    ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>${rolling ? ' <span class="wclock">· rolling</span>' : ""}`
+    : "rolling";
   const title = `${e.name || ""}${capped ? " · unusable until the capped window resets" : ""}`;
   return `<div class="mini${capped ? " capped" : ""}" title="${esc(title)}">
     <span class="mtag">${windowTag(e.window, e.name)}</span>
@@ -892,12 +909,13 @@ function renderA(m) {
   let body = "";
   if (m.hero) {
     const p = clampPct(m.hero.percentRemaining);
+    const rolling = isRollingWindow(m.hero.window);
     body += `<div class="bighero">
       <div class="bignum">${Math.round(p)}<small>%</small></div>
       <div class="heroside">
         <span class="wtag2">${windowTag(m.hero.window, m.hero.name)}</span>
         <div class="hreset2">${m.hero.resetAt
-          ? `resets in <b class="cd" data-at="${esc(m.hero.resetAt)}">—</b><span class="wclock"> · ${fmtClock(m.hero.resetAt)}</span>`
+          ? `resets in <b class="cd" data-at="${esc(m.hero.resetAt)}">—</b><span class="wclock"> · ${rolling ? "rolling" : fmtClock(m.hero.resetAt)}</span>`
           : `rolling · no fixed reset`}</div>
       </div>
     </div>
@@ -937,10 +955,11 @@ function renderC(m) {
   let reset = "";
   if (m.hero) {
     const p = clampPct(m.hero.percentRemaining);
+    const rolling = isRollingWindow(m.hero.window);
     hero = `<div class="bignum">${Math.round(p)}<small>%</small></div><div class="band-window">${windowTag(m.hero.window, m.hero.name)}</div>`;
     bars = `<div class="primarybar"><i style="width:${p}%"></i></div>`;
     reset = m.hero.resetAt
-      ? `in <b class="cd" data-at="${esc(m.hero.resetAt)}">—</b><span class="wclock">${fmtClock(m.hero.resetAt)}</span>`
+      ? `in <b class="cd" data-at="${esc(m.hero.resetAt)}">—</b><span class="wclock">${rolling ? "rolling" : fmtClock(m.hero.resetAt)}</span>`
       : "rolling";
   }
   if (m.others.length) bars += `<div class="band-minis">${m.others.map(miniC).join("")}</div>`;

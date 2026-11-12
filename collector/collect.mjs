@@ -1059,8 +1059,11 @@ async function main() {
     }
     if (id === "google-antigravity") {
       r.entries = filterAntigravityDisplayEntries(r.entries);
+      // The summary also publishes the plan-level weekly buckets. Per-model
+      // rows only show the 5h buckets, so without this the durable Gemini
+      // allowance can read 100% while its weekly bucket is mostly used.
+      const plan = await probeGooglePlan();
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
-        const plan = await probeGooglePlan();
         if (plan?.argon) {
           r.entries.push(plan.argon);
           r.note = [r.note, "G4Argon from Google's quota summary"].filter(Boolean).join(" · ");
@@ -1070,7 +1073,20 @@ async function main() {
           r.note = [r.note, unavailable.note].filter(Boolean).join(" · ");
         }
       }
-      if (isConstantAntigravityReport(r.entries)) {
+      // Keep the constant-full annotation tied to the per-model + Argon shape
+      // it was written for; the durable weekly rows have their own resets and
+      // would otherwise hide the unmetered-account note.
+      const constantFull = isConstantAntigravityReport(r.entries);
+      let addedWeekly = false;
+      for (const entry of plan?.weekly || []) {
+        if (r.entries.some(e => e.window === entry.window)) continue;
+        r.entries.push(entry);
+        addedWeekly = true;
+      }
+      if (addedWeekly) {
+        r.note = [r.note, "weekly allowances from Google's quota summary"].filter(Boolean).join(" · ");
+      }
+      if (constantFull) {
         r.note = [r.note, "Google AI Pro · live quota"].filter(Boolean).join(" · ");
       }
     }

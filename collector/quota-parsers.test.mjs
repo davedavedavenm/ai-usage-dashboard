@@ -10,6 +10,7 @@ import {
   filterAntigravityDisplayEntries,
   antigravityG4ArgonUnavailable,
   antigravityQuotaSummaryArgon,
+  antigravityQuotaSummaryWeekly,
   retainSkippedProviders,
   isoFrom,
 } from './quota-parsers.mjs';
@@ -156,6 +157,64 @@ test('antigravity quota summary exposes the live G4Argon weekly bucket', () => {
   assert.equal(antigravityQuotaSummaryArgon({ groups: [{ displayName: 'Gemini 4 Argon', buckets: [{ remainingFraction: 0.5, disabled: true }] }] }), null);
   assert.equal(antigravityQuotaSummaryArgon({}), null);
   assert.equal(antigravityQuotaSummaryArgon(null), null);
+});
+
+test('antigravity quota summary exposes the plan-level weekly buckets, not just Argon', () => {
+  // The summary's weekly buckets are the durable Gemini / Claude-GPT
+  // allowances. The 5h buckets are already represented by the per-model rows
+  // from fetchAvailableModels, and Argon has its own entry, so neither may be
+  // duplicated here.
+  const body = {
+    groups: [
+      {
+        displayName: 'Gemini Models',
+        buckets: [
+          { bucketId: 'gemini-weekly', displayName: 'Weekly Limit Remaining', window: 'weekly', remainingFraction: 0.35419062, resetTime: '2026-10-30T22:02:38Z' },
+          { bucketId: 'gemini-5h', displayName: 'Five Hour Limit Remaining', window: '5h', remainingFraction: 1, resetTime: '2026-10-30T12:12:07Z' },
+        ],
+      },
+      {
+        displayName: 'Claude and GPT models',
+        buckets: [
+          { bucketId: '3p-weekly', remainingFraction: 0, resetTime: '2026-11-05T07:21:22Z' },
+          { bucketId: '3p-5h', remainingFraction: 0.1930904, disabled: true },
+        ],
+      },
+      {
+        displayName: 'Gemini 4 Argon',
+        buckets: [
+          { bucketId: 'gemini-argon-wtu-weekly', displayName: 'Gemini 4 Argon Weekly Limit', remainingFraction: 0.0773376, resetTime: '2026-11-01T07:06:50Z' },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(antigravityQuotaSummaryWeekly(body), [
+    {
+      name: 'Gemini weekly',
+      renderType: 'percent',
+      percentRemaining: 35,
+      resetAt: '2026-10-30T22:02:38Z',
+      window: 'agy-gemini-weekly',
+    },
+    {
+      name: 'Claude/GPT weekly',
+      renderType: 'percent',
+      percentRemaining: 0,
+      resetAt: '2026-11-05T07:21:22Z',
+      window: 'agy-3p-weekly',
+    },
+  ]);
+
+  // A disabled weekly bucket is not a usable allowance.
+  assert.deepEqual(antigravityQuotaSummaryWeekly({
+    groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.5, disabled: true }] }],
+  }), []);
+  // A 5h-only response has nothing durable to add.
+  assert.deepEqual(antigravityQuotaSummaryWeekly({
+    groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-5h', remainingFraction: 1 }] }],
+  }), []);
+  assert.deepEqual(antigravityQuotaSummaryWeekly({}), []);
+  assert.deepEqual(antigravityQuotaSummaryWeekly(null), []);
 });
 
 test('G4Argon fallback says Google did not report it, never claims the model is absent', () => {

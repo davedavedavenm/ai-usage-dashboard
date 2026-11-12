@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { antigravityQuotaSummaryArgon } from "./quota-parsers.mjs";
+import { antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
@@ -111,11 +111,12 @@ async function post(url, { headers, body, timeoutMs = PROBE_TIMEOUT_MS }) {
 // publishes.
 export async function probeGooglePlan() {
   let argon = null;
+  let weekly = [];
   try {
     const account = readAccount();
-    if (!account) return { ok: false, error: "no Antigravity account store on this host" };
+    if (!account) return { ok: false, error: "no Antigravity account store on this host", weekly };
     const credentials = readClientCredentials();
-    if (!credentials) return { ok: false, error: "Antigravity plugin companion not found" };
+    if (!credentials) return { ok: false, error: "Antigravity plugin companion not found", weekly };
 
     const tokenResponse = await post(TOKEN_URL, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -126,9 +127,9 @@ export async function probeGooglePlan() {
         grant_type: "refresh_token",
       }),
     });
-    if (!tokenResponse.ok) return { ok: false, error: "Antigravity token refresh HTTP " + tokenResponse.status };
+    if (!tokenResponse.ok) return { ok: false, error: "Antigravity token refresh HTTP " + tokenResponse.status, weekly };
     const token = await tokenResponse.json().catch(() => null);
-    if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token" };
+    if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token", weekly };
 
     try {
       for (const summaryUrl of QUOTA_SUMMARY_URLS) {
@@ -143,6 +144,9 @@ export async function probeGooglePlan() {
         });
         if (!summaryResponse.ok) continue;
         const summary = await summaryResponse.json().catch(() => null);
+        // Keep the daily host's weekly rows even when production has to supply
+        // the Argon bucket: production serves stale Gemini buckets (2026-11-08).
+        if (!weekly.length) weekly = antigravityQuotaSummaryWeekly(summary);
         argon = antigravityQuotaSummaryArgon(summary);
         if (argon) break;
       }
@@ -155,10 +159,10 @@ export async function probeGooglePlan() {
       headers: { Authorization: "Bearer " + token.access_token, "Content-Type": "application/json", "User-Agent": USER_AGENT },
       body: JSON.stringify({ cloudaicompanionProject: account.projectId }),
     });
-    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon };
+    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, weekly };
     const plan = await planResponse.json().catch(() => null);
     const tier = plan?.currentTier?.id || null;
-    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon };
+    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, weekly };
     // Google's upsell text embeds the account email in a URL, so only its
     // presence is read; the wording is never published.
     const upgradeOffered = Boolean(plan?.currentTier?.upgradeSubscriptionUri || plan?.currentTier?.upgradeSubscriptionText);
@@ -170,9 +174,10 @@ export async function probeGooglePlan() {
       upgradeOffered,
       project: account.projectId,
       argon,
+      weekly,
     };
   } catch (error) {
-    return { ok: false, error: String(error?.message || error).slice(0, 160), argon };
+    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, weekly };
   }
 }
 
