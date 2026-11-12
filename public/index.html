@@ -386,6 +386,13 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   display: flex; justify-content: space-between; align-items: flex-start;
   gap: 12px; flex-wrap: wrap;
 }
+/* Title + subtitle share one line so the fleet band does not spend two rows
+   on its heading (2026-11-12). */
+.fleet-id {
+  display: flex; align-items: baseline; gap: 10px;
+  flex-wrap: wrap; min-width: 0;
+}
+.fleet-id .band-sub { margin-top: 0; }
 .fleet-note { font-family: var(--font-mono); font-size: .52rem; color: var(--ink-faint); }
 .fleet-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -994,7 +1001,7 @@ function fleetBand(m) {
   const rows = m.loads.slice().sort((a, b) => b.utilization - a.utilization);
   return `<section class="fleet-band ${m.cls}" style="--accent:${m.meta.accent}" data-provider="${m.id}">
     <div class="fleet-head">
-      <div><div class="band-name">${esc(m.meta.name)}</div><div class="band-sub">${esc(m.meta.sub)}</div></div>
+      <div class="fleet-id"><div class="band-name">${esc(m.meta.name)}</div><div class="band-sub">${esc(m.meta.sub)}</div></div>
       <div class="fleet-note">${rows.length} models · ${esc(m.note)}</div>
       ${m.stateChip}
     </div>
