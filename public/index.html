@@ -23,7 +23,10 @@
      (2026-10-03: Cascadia Mono shaped zero-width advances in Firefox). */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { color-scheme: dark; }
+/* 125% of the browser default: the card labels and reset lines were tuning
+   for 8-10px at the base breakpoint, which is too small to read comfortably.
+   Relative sizing keeps the user's own font-size preference in effect. */
+html { color-scheme: dark; font-size: 125%; }
 body {
   min-height: 100vh;
   color: var(--ink);
@@ -263,7 +266,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .mpct.crit { color: var(--red); }
 .mreset {
   font-family: var(--font-mono); font-size: .5rem; color: var(--ink-faint);
-  white-space: nowrap; text-align: right;
+  white-space: normal; line-height: 1.25; text-align: right;
 }
 .mini.capped .mtag, .mini.capped .mpct, .mini.capped .mreset, .mini.capped .mmeter { opacity: .45; }
 .loadgrid {
