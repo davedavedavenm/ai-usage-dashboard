@@ -195,6 +195,13 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .card.state-low { border-color: rgba(242,169,59,.35); }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .card-id { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+/* The wide Radeon card has room for its subtitle beside the title; stacking it
+   wasted a whole row (2026-11-12). */
+.card-id.inline-id > div {
+  display: flex; align-items: baseline; gap: 10px;
+  flex-wrap: wrap; min-width: 0;
+}
+.card-id.inline-id .psub { margin-top: 0; }
 .pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 6px; flex: none; }
 .pname {
   font-family: var(--font-display); font-size: 1rem; font-weight: 600;
@@ -916,8 +923,9 @@ function valueA(e, id) {
 
 function renderA(m) {
   const wide = m.id === "radeon-cloud" ? " wide" : "";
+  const inlineId = m.id === "radeon-cloud" ? " inline-id" : "";
   const head = `<div class="card-head">
-    <div class="card-id"><span class="pdot"></span><div><div class="pname">${esc(m.meta.name)}</div><div class="psub">${esc(m.meta.sub)}</div></div></div>
+    <div class="card-id${inlineId}"><span class="pdot"></span><div><div class="pname">${esc(m.meta.name)}</div><div class="psub">${esc(m.meta.sub)}</div></div></div>
     ${m.stateChip}
   </div>`;
   if (!m.alive) {
