@@ -9,7 +9,7 @@ import { refreshOpenAITokenIfNeeded } from "./chatgpt-token.mjs";
 import { fetchQwenTokenPlan, resolveQwenApiKey } from "./qwen-token.mjs";
 import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAtomic } from "./ali-session.mjs";
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
-import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom, filterAntigravityDisplayEntries, antigravityG4ArgonUnavailable } from "./quota-parsers.mjs";
+import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom, filterAntigravityDisplayEntries, renameAntigravityDisplayEntries, antigravityG4ArgonUnavailable } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1058,11 +1058,18 @@ async function main() {
       continue;
     }
     if (id === "google-antigravity") {
-      r.entries = filterAntigravityDisplayEntries(r.entries);
+      r.entries = renameAntigravityDisplayEntries(filterAntigravityDisplayEntries(r.entries));
       // The summary also publishes the plan-level weekly buckets. Per-model
       // rows only show the 5h buckets, so without this the durable Gemini
       // allowance can read 100% while its weekly bucket is mostly used.
       const plan = await probeGooglePlan();
+      // Gemini 4 Hydrogen is a new offering the pinned CLI's catalogue UA
+      // cannot see (2026-11-12). It shares the Gemini 5h bucket, so publish
+      // the model's own quotaInfo beside the other Gemini rows.
+      if (plan?.hydrogen && !r.entries.some(e => e.window === plan.hydrogen.window)) {
+        r.entries.push(plan.hydrogen);
+        r.note = [r.note, "Gemini Hydrogen from Google's model catalogue"].filter(Boolean).join(" · ");
+      }
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
         if (plan?.argon) {
           r.entries.push(plan.argon);

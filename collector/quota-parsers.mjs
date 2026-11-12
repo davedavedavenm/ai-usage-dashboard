@@ -150,7 +150,7 @@ const ANTIGRAVITY_MODEL_SPECS = [
       "gemini-4-pro",
       "gemini-4-flash",
     ],
-    prefixRe: /^gemini-4(?:\.\d+)?-|argon/i,
+    prefixRe: /argon/i,
   },
   {
     id: "G3PRO",
@@ -169,7 +169,7 @@ const ANTIGRAVITY_MODEL_SPECS = [
   },
   {
     id: "G3FLASH",
-    name: "G3Flash",
+    name: "Gemini Flash",
     window: "agy-g3flash",
     keys: [
       "gemini-3-flash",
@@ -205,13 +205,26 @@ const ANTIGRAVITY_MODEL_SPECS = [
   },
   {
     id: "G3IMAGE",
-    name: "G3Image",
+    name: "Gemini Image",
     window: "agy-g3image",
     keys: [
       "gemini-3.1-flash-image",
       "gemini-3-pro-image",
     ],
     prefixRe: /^gemini-3(?:\.\d+)?-(?:pro|flash)-image/i,
+  },
+  {
+    id: "G4HYDROGEN",
+    name: "Gemini Hydrogen",
+    window: "agy-g4hydrogen",
+    keys: [
+      "gemini-4-hydrogen-high",
+      "gemini-4-hydrogen-medium",
+      "gemini-4-hydrogen-low",
+      "gemini-4-hydrogen-xhigh",
+      "gemini-4-hydrogen",
+    ],
+    prefixRe: /^gemini-4-hydrogen/i,
   },
 ];
 
@@ -241,6 +254,43 @@ export function extractAntigravityModelEntries(modelsMap) {
     });
   }
   return entries;
+}
+
+// Google renamed the per-model offerings again (2026-11-12): the catalogue's
+// Flash/Image rows are no longer "G3Flash"/"G3Image", and Gemini 3 Pro is gone.
+// Keep the stable window ids (history, alerts) and rename only the display
+// label so the card names what Google currently offers.
+const ANTIGRAVITY_DISPLAY_RENAMES = {
+  G3Flash: "Gemini Flash",
+  G3Image: "Gemini Image",
+};
+
+export function renameAntigravityDisplayEntries(entries) {
+  return (entries || []).map(entry => {
+    const name = ANTIGRAVITY_DISPLAY_RENAMES[entry?.name];
+    return name ? { ...entry, name } : entry;
+  });
+}
+
+// Gemini 4 Hydrogen is a new offering (2026-11-12) listed only by the daily
+// host's fetchAvailableModels catalogue and only under the newer AGY UA the
+// pinned quota CLI does not send. It shares the Gemini 5h bucket with Flash
+// (no separate allowance), so publish the model's own quotaInfo honestly and
+// let the card show it beside the other Gemini rows. Gemini 4 Carbon is listed
+// as *-disabled with no quotaInfo and must never become a row.
+export function antigravityHydrogenEntry(modelsMap) {
+  if (!modelsMap || typeof modelsMap !== "object") return null;
+  const key = Object.keys(modelsMap).find(k => /^gemini-4-hydrogen(?:-|$)/i.test(k) && modelsMap[k]?.quotaInfo);
+  if (!key) return null;
+  const quota = modelsMap[key].quotaInfo;
+  if (typeof quota.remainingFraction !== "number" || !Number.isFinite(quota.remainingFraction)) return null;
+  return {
+    name: "Gemini Hydrogen",
+    renderType: "percent",
+    percentRemaining: Math.round(Math.max(0, Math.min(1, quota.remainingFraction)) * 100),
+    resetAt: typeof quota.resetTime === "string" && quota.resetTime.trim() ? quota.resetTime.trim() : undefined,
+    window: "agy-g4hydrogen",
+  };
 }
 
 // GPT-OSS is not an Antigravity model Dave uses. The host quota config may

@@ -782,7 +782,7 @@ function windowTag(w, name) {
 }
 const WIN_ORDER = {
   "5h": 0, fiveHour: 0, rolling: 0,
-  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0,
+  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0, "agy-g4hydrogen": 0,
   weekly: 1, "agy-gemini-weekly": 1, "agy-3p-weekly": 1, "agy-g4argon": 1,
   monthly: 2, mcp: 3,
 };
@@ -790,7 +790,7 @@ const WIN_ORDER = {
 // time + 5h while the window is unused, so the timestamp moves with every
 // collect. Mark those instead of presenting them as a fixed clock time.
 function isRollingWindow(w) {
-  return /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|claude)$/i.test(w || "");
+  return /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|claude)$/i.test(w || "");
 }
 function sortWindows(a, b) {
   const pa = WIN_ORDER[a.window] ?? 9;

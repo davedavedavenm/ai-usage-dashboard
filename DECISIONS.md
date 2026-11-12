@@ -587,6 +587,40 @@ The per-model 5 h and OpenCode Go rolling windows are provider-stamped
 collect and a probe is expected and is not an accuracy bug. Do not shorten the
 10-minute cadence to chase it.
 
+## Antigravity model labels follow the current Google catalogue — Active (2026-11-12)
+
+Google renamed the Antigravity offerings again on 2026-11-12. The live
+`v1internal:fetchAvailableModels` catalogue (daily host, `antigravity/cli/1.4.7`
+UA) now lists:
+
+- **Gemini 4 Hydrogen** (`gemini-4-hydrogen-{high,medium,low,xhigh}`) — new,
+  shares the Gemini 5 h bucket with Flash (83% left at the time), no separate
+  allowance.
+- **Gemini 4 Carbon** (`gemini-4-carbon-disabled`) — listed but disabled, no
+  `quotaInfo`; never publish a row for it.
+- **Gemini 3 Pro** — gone from the catalogue; the old `G3Pro` slot has nothing
+  to report and is simply absent.
+- **Gemini 4 Argon** — now also present in `fetchAvailableModels` (13.3%
+  weekly), but the pinned CLI still misses it because it sends the older
+  `antigravity/1.11.9` UA; the quota-summary fallback stays.
+
+**Decision:** the card names what Google currently offers, without changing
+the stable window ids (history and alert dedupe keep working):
+
+- `G3Flash` renders as **Gemini Flash**, `G3Image` as **Gemini Image**
+  (`renameAntigravityDisplayEntries`); the host config may still say
+  `G3FLASH`/`G3IMAGE`.
+- `google-plan.mjs` reads the model catalogue from the **daily host first**
+  (`FETCH_MODELS_URLS`, same reason as the 2026-11-08 summary decision) and
+  publishes `G4HYDROGEN` as **Gemini Hydrogen** from that model's own
+  `quotaInfo` (`antigravityHydrogenEntry`). The pinned CLI cannot see Hydrogen
+  because of its UA, so this is a collector-side probe.
+- Hydrogen is a Gemini model on the shared 5 h bucket, not a new allowance:
+  its row repeats the Gemini 5 h percentage and stays in the threshold-alert
+  pool like Flash/Image (one tightest-window alert per provider).
+- Carbon is deliberately not shown; an absent Hydrogen row means the daily
+  catalogue did not report it, never that the model is withdrawn.
+
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 
 Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports

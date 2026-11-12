@@ -139,7 +139,7 @@ If the AccessKey source fails, the collector degrades through the legacy
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` |
 | Z.ai | direct quota API + console subscription API (`biz/subscription/list`, for the plan renewal date) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | auth.json `opencode-go` key |
-| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (G3Flash, Claude, G3Image from the CLI; G4Argon from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
+| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (Gemini Flash, Claude, Gemini Image from the CLI; Gemini Hydrogen from the daily model catalogue; G4Argon from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). Hydrogen shares the Gemini 5 h bucket; Gemini 4 Carbon is disabled and GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 | Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
 

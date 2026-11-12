@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
+import { antigravityHydrogenEntry, antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
@@ -35,6 +35,13 @@ const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loa
 export const QUOTA_SUMMARY_URLS = [
   "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
   "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+];
+// The model catalogue is where a brand-new offering appears first. On
+// 2026-11-12 the daily host listed Gemini 4 Hydrogen while production still
+// returned the old list, so ask daily first for the same reason as the summary.
+export const FETCH_MODELS_URLS = [
+  "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
 ];
 const QUOTA_SUMMARY_UA = "antigravity/cli/1.4.7 darwin/amd64";
 const USER_AGENT = "antigravity/1.11.9 linux/x64";
@@ -104,13 +111,15 @@ async function post(url, { headers, body, timeoutMs = PROBE_TIMEOUT_MS }) {
   }
 }
 
-// Returns { ok, tier, paidTier, upgradeOffered, project, argon } on success,
-// and { ok: false, error, argon } on failure. `argon` is the live G4Argon
-// percent entry from the quota-summary endpoint when Google publishes one.
-// A failed plan probe must never take the collector down or change what it
-// publishes.
+// Returns { ok, tier, paidTier, upgradeOffered, project, argon, hydrogen,
+// weekly } on success, and { ok: false, error, argon, hydrogen, weekly } on
+// failure. `argon` is the live G4Argon percent entry from the quota-summary
+// endpoint when Google publishes one; `hydrogen` is the new Gemini 4 Hydrogen
+// entry from the model catalogue. A failed plan probe must never take the
+// collector down or change what it publishes.
 export async function probeGooglePlan() {
   let argon = null;
+  let hydrogen = null;
   let weekly = [];
   try {
     const account = readAccount();
@@ -155,14 +164,34 @@ export async function probeGooglePlan() {
       // a "not reported" Argon row instead.
     }
 
+    try {
+      for (const modelsUrl of FETCH_MODELS_URLS) {
+        const modelsResponse = await post(modelsUrl, {
+          headers: {
+            Authorization: "Bearer " + token.access_token,
+            "Content-Type": "application/json",
+            "User-Agent": QUOTA_SUMMARY_UA,
+            "x-activity-request-id": randomUUID(),
+          },
+          body: JSON.stringify({ project: account.projectId }),
+        });
+        if (!modelsResponse.ok) continue;
+        const catalogue = await modelsResponse.json().catch(() => null);
+        hydrogen = antigravityHydrogenEntry(catalogue?.models);
+        if (hydrogen) break;
+      }
+    } catch {
+      // Hydrogen is a new offering; an absent row is honest, never an error.
+    }
+
     const planResponse = await post(LOAD_CODE_ASSIST_URL, {
       headers: { Authorization: "Bearer " + token.access_token, "Content-Type": "application/json", "User-Agent": USER_AGENT },
       body: JSON.stringify({ cloudaicompanionProject: account.projectId }),
     });
-    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, weekly };
+    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, hydrogen, weekly };
     const plan = await planResponse.json().catch(() => null);
     const tier = plan?.currentTier?.id || null;
-    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, weekly };
+    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, hydrogen, weekly };
     // Google's upsell text embeds the account email in a URL, so only its
     // presence is read; the wording is never published.
     const upgradeOffered = Boolean(plan?.currentTier?.upgradeSubscriptionUri || plan?.currentTier?.upgradeSubscriptionText);
@@ -174,10 +203,11 @@ export async function probeGooglePlan() {
       upgradeOffered,
       project: account.projectId,
       argon,
+      hydrogen,
       weekly,
     };
   } catch (error) {
-    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, weekly };
+    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, hydrogen, weekly };
   }
 }
 

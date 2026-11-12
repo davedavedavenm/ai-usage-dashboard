@@ -8,6 +8,8 @@ import {
   parseAnthropicOAuthUsage,
   extractAntigravityModelEntries,
   filterAntigravityDisplayEntries,
+  renameAntigravityDisplayEntries,
+  antigravityHydrogenEntry,
   antigravityG4ArgonUnavailable,
   antigravityQuotaSummaryArgon,
   antigravityQuotaSummaryWeekly,
@@ -85,23 +87,58 @@ test('parseAnthropicOAuthUsage parses live /api/oauth/usage payload and weekly b
   assert.equal(parseAnthropicOAuthUsage(null), null);
 });
 
-test('extractAntigravityModelEntries maps G4Argon, Claude 5.5, Gemini 3.1-flash-image, and Gemini 3.6/3.8 Flash', () => {
+test('extractAntigravityModelEntries maps the current Google offerings', () => {
   const models = {
     'gemini-4-argon': { quotaInfo: { remainingFraction: 0.85, resetTime: '2026-10-17T11:13:07Z' } },
     'gemini-3.1-pro-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'gemini-3.8-flash-tiered': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'claude-opus-5-5-high': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
     'gemini-3.1-flash-image': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
+    'gemini-4-hydrogen-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'gpt-oss-120b-medium': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
   };
   const entries = extractAntigravityModelEntries(models);
   assert.deepEqual(entries, [
     { name: 'G4Argon', renderType: 'percent', percentRemaining: 85, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g4argon' },
     { name: 'G3Pro', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3pro' },
-    { name: 'G3Flash', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3flash' },
+    { name: 'Gemini Flash', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3flash' },
     { name: 'Claude', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-claude' },
-    { name: 'G3Image', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3image' },
+    { name: 'Gemini Image', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3image' },
+    { name: 'Gemini Hydrogen', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g4hydrogen' },
   ]);
+});
+
+test('antigravity display names follow the current Google catalogue', () => {
+  const entries = [
+    { name: 'G3Flash', renderType: 'percent', percentRemaining: 82, window: 'agy-g3flash' },
+    { name: 'G3Image', renderType: 'percent', percentRemaining: 82, window: 'agy-g3image' },
+    { name: 'Claude', renderType: 'percent', percentRemaining: 100, window: 'agy-claude' },
+    { name: 'G4Argon', renderType: 'percent', percentRemaining: 13, window: 'agy-g4argon' },
+    { name: 'Gemini weekly', renderType: 'percent', percentRemaining: 70, window: 'agy-gemini-weekly' },
+  ];
+  assert.deepEqual(renameAntigravityDisplayEntries(entries).map(e => e.name), [
+    'Gemini Flash', 'Gemini Image', 'Claude', 'G4Argon', 'Gemini weekly',
+  ]);
+  // The rename must not mutate the parsed entries in place.
+  assert.equal(entries[0].name, 'G3Flash');
+  assert.deepEqual(renameAntigravityDisplayEntries(undefined), []);
+});
+
+test('antigravity model catalogue exposes the new Gemini 4 Hydrogen offering', () => {
+  // Live 2026-11-12 shape: Hydrogen exists only on the daily host with the
+  // antigravity/cli UA, and shares the Gemini 5h bucket (83% left) with Flash.
+  const models = {
+    'gemini-4-hydrogen-high': { displayName: 'Gemini 4 Hydrogen (High)', quotaInfo: { remainingFraction: 0.83097184, resetTime: '2026-11-13T01:53:54Z' } },
+    'gemini-4-argon-high': { quotaInfo: { remainingFraction: 0.13292453, resetTime: '2026-11-15T18:57:30Z' } },
+  };
+  assert.deepEqual(antigravityHydrogenEntry(models), {
+    name: 'Gemini Hydrogen', renderType: 'percent', percentRemaining: 83,
+    resetAt: '2026-11-13T01:53:54Z', window: 'agy-g4hydrogen',
+  });
+  assert.equal(antigravityHydrogenEntry({}), null);
+  assert.equal(antigravityHydrogenEntry(null), null);
+  // Gemini 4 Carbon is listed but disabled (no quotaInfo): never invent a row.
+  assert.equal(antigravityHydrogenEntry({ 'gemini-4-carbon-disabled': { displayName: 'Gemini 4 Carbon' } }), null);
 });
 
 test('antigravity display drops GPT-OSS even when the host probe returns it', () => {
