@@ -251,7 +251,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   padding-top: 9px; display: grid; gap: 6px;
 }
 .mini {
-  display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) 2.2rem auto;
+  display: grid; grid-template-columns: 6.2rem minmax(0, 1fr) 2.2rem auto;
   gap: 7px; align-items: center; min-width: 0;
 }
 .mtag {
@@ -354,8 +354,8 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .band-bars .primarybar { margin-top: 0; }
 .band-minis { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
 .band-minis .mini {
-  flex: 0 1 12rem;
-  grid-template-columns: 4.2rem minmax(0, 1fr) 2rem;
+  flex: 0 1 14.5rem;
+  grid-template-columns: 6.2rem minmax(0, 1fr) 2.2rem;
   gap: 5px;
 }
 .band-minis .mini .mreset { display: none; }
@@ -508,7 +508,7 @@ footer {
   .hreset2 { font-size: .82rem; }
   .primarybar { height: 9px; }
   .minis { gap: 8px; }
-  .mini { grid-template-columns: 5.4rem minmax(0, 1fr) 2.6rem auto; gap: 10px; }
+  .mini { grid-template-columns: 8.2rem minmax(0, 1fr) 2.8rem auto; gap: 10px; }
   .mtag { font-size: .7rem; }
   .mpct { font-size: .78rem; }
   .mreset { font-size: .64rem; }
@@ -531,7 +531,7 @@ footer {
   .band-meta .vline { font-size: .68rem; }
   .band-minis .mtag { font-size: .62rem; }
   .band-minis .mpct { font-size: .72rem; }
-  .band-minis .mini { grid-template-columns: 5.6rem minmax(0, 1fr) 2.4rem; }
+  .band-minis .mini { flex: 0 1 17.5rem; grid-template-columns: 8.2rem minmax(0, 1fr) 2.6rem; }
   .fleet-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 24px; }
   .fleet-name, .fleet-pct { font-size: .72rem; }
   .fleet-item { grid-template-columns: minmax(0, 1fr) 6rem 3.2rem 5rem; }
@@ -801,10 +801,15 @@ const WIN_ORDER = {
   monthly: 2, mcp: 3,
 };
 // OpenCode Go and the Antigravity per-model 5h buckets stamp reset = sample
-// time + 5h while the window is unused, so the timestamp moves with every
-// collect. Mark those instead of presenting them as a fixed clock time.
-function isRollingWindow(w) {
-  return /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|claude)$/i.test(w || "");
+// time + 5h while unused. Only mark them rolling when the reset is still
+// inside that ~5h rolling horizon; when capped by a multi-day weekly reset
+// (> 6h out), show the real reset clock instead.
+function isRollingWindow(w, resetAt) {
+  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|claude)$/i.test(w || "");
+  if (!is5hRolling) return false;
+  if (!resetAt) return true;
+  const delta = Date.parse(resetAt) - Date.now();
+  return Number.isNaN(delta) || delta <= 6 * 3600 * 1000;
 }
 function sortWindows(a, b) {
   const pa = WIN_ORDER[a.window] ?? 9;
@@ -891,7 +896,7 @@ const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 
 function miniA(e, capped) {
   const p = clampPct(e.percentRemaining);
-  const rolling = isRollingWindow(e.window);
+  const rolling = isRollingWindow(e.window, e.resetAt);
   const reset = e.resetAt
     ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>${rolling ? ' <span class="wclock">· rolling</span>' : ""}`
     : "rolling";
@@ -934,7 +939,7 @@ function renderA(m) {
   let body = "";
   if (m.hero) {
     const p = clampPct(m.hero.percentRemaining);
-    const rolling = isRollingWindow(m.hero.window);
+    const rolling = isRollingWindow(m.hero.window, m.hero.resetAt);
     body += `<div class="bighero">
       <div class="bignum">${Math.round(p)}<small>%</small></div>
       <div class="heroside">
@@ -980,7 +985,7 @@ function renderC(m) {
   let reset = "";
   if (m.hero) {
     const p = clampPct(m.hero.percentRemaining);
-    const rolling = isRollingWindow(m.hero.window);
+    const rolling = isRollingWindow(m.hero.window, m.hero.resetAt);
     hero = `<div class="bignum">${Math.round(p)}<small>%</small></div><div class="band-window">${windowTag(m.hero.window, m.hero.name)}</div>`;
     bars = `<div class="primarybar"><i style="width:${p}%"></i></div>`;
     reset = m.hero.resetAt
@@ -1079,14 +1084,23 @@ function render(record) {
     usableChip.hidden = true;
   }
   const chipEl = document.getElementById("nextResetChip");
-  const resets = [];
+  const allResets = [];
+  const activeResets = [];
   for (const m of models) {
     for (const e of m.percents) {
       if (!e.resetAt) continue;
       const t = Date.parse(e.resetAt);
-      if (!isNaN(t)) resets.push({ t, iso: e.resetAt, label: m.meta.name, name: e.name });
+      if (isNaN(t)) continue;
+      const item = { t, iso: e.resetAt, label: m.meta.name, name: e.name };
+      allResets.push(item);
+      // Unused 100% rolling 5h windows just stamp reset = now + 5h; prefer
+      // windows actually counting down toward a real reset.
+      if (!(e.percentRemaining >= 100 && isRollingWindow(e.window, e.resetAt))) {
+        activeResets.push(item);
+      }
     }
   }
+  const resets = activeResets.length ? activeResets : allResets;
   if (resets.length) {
     resets.sort((a, b) => a.t - b.t);
     const r = resets[0];
