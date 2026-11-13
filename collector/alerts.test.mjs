@@ -199,25 +199,50 @@ test('longestPeriodEntries falls back to a shorter window when the longest is ex
   assert.equal(longest[0].blocked[0].resetAt, '2026-09-20T18:00:00Z');
 });
 
-test('rollover alerts: Antigravity Claude is the durable window', async () => {
+test('rollover alerts: Antigravity uses Gemini weekly/Argon and ignores 5h Claude & 3p-weekly', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
-  const resetAt = '2026-09-21T06:00:00Z';
+  const t0 = new Date('2026-11-13T16:40:00Z').getTime();
+
+  // Live failure mode (2026-11-13): agy-claude is 100% with a 5h rolling reset,
+  // agy-3p-weekly is 100% 7d out, and Gemini weekly/Argon are >24h away.
+  // Neither agy-claude nor agy-3p-weekly may trigger a rollover alert.
   const data = {
     'google-antigravity': {
       label: 'google-antigravity',
       entries: [
-        { name: 'G3Flash', window: 'agy-g3flash', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 80 },
-        { name: 'Claude', window: 'agy-claude', resetAt, renderType: 'percent', percentRemaining: 50 },
+        { name: 'Gemini Flash', window: 'agy-g3flash', resetAt: '2026-11-15T19:09:05Z', renderType: 'percent', percentRemaining: 23 },
+        { name: 'Claude', window: 'agy-claude', resetAt: '2026-11-13T21:40:09Z', renderType: 'percent', percentRemaining: 100 },
+        { name: 'G4Argon', window: 'agy-g4argon', resetAt: '2026-11-15T18:57:30Z', renderType: 'percent', percentRemaining: 13 },
+        { name: 'Gemini weekly', window: 'agy-gemini-weekly', resetAt: '2026-11-15T19:09:05Z', renderType: 'percent', percentRemaining: 23 },
+        { name: 'Claude/GPT weekly', window: 'agy-3p-weekly', resetAt: '2026-11-20T16:40:10Z', renderType: 'percent', percentRemaining: 100 },
       ],
     },
   };
-  const t20 = new Date('2026-09-20T10:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t20);
+  await h.context.runRolloverAlerts(data, state, cfg, t0);
+  assert.equal(h.calls.length, 0);
+
+  // Even when only agy-claude (5h) and agy-3p-weekly (Claude/GPT weekly, within 12h)
+  // are present, both stay out of Antigravity alerts.
+  const claudeOnly = {
+    'google-antigravity': {
+      label: 'google-antigravity',
+      entries: [
+        { name: 'Claude', window: 'agy-claude', resetAt: '2026-11-13T21:40:09Z', renderType: 'percent', percentRemaining: 100 },
+        { name: 'Claude/GPT weekly', window: 'agy-3p-weekly', resetAt: '2026-11-14T02:00:00Z', renderType: 'percent', percentRemaining: 100 },
+      ],
+    },
+  };
+  await h.context.runRolloverAlerts(claudeOnly, state, cfg, t0);
+  assert.equal(h.calls.length, 0);
+
+  // Within 24h of the real Gemini reset, the durable Gemini bucket alerts once.
+  const tNear = new Date('2026-11-14T20:00:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, tNear);
   assert.equal(h.calls.length, 1);
-  assert.match(h.calls[0].body.text, /Gemini · Antigravity · Claude/);
-  assert.match(h.calls[0].body.text, /50%<\/b> allowance remaining before reset/);
+  assert.match(h.calls[0].body.text, /Gemini · Antigravity · G4Argon/);
+  assert.match(h.calls[0].body.text, /13%<\/b> allowance remaining before reset/);
 });
 
 test('rollover alerts: GPT-OSS is not a durable Antigravity window', async () => {

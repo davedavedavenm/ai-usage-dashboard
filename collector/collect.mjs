@@ -657,7 +657,7 @@ function tightestEntry(providers) {
       if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
       if (id === "google-antigravity") {
         // Default Gemini allowance to G3Flash / non-Claude
-        if (/claude|gpt/i.test(`${e.name} ${e.window}`)) continue;
+        if (/claude|gpt|3p/i.test(`${e.name} ${e.window}`)) continue;
       }
       if (!best || e.percentRemaining < best.percentRemaining) best = e;
     }
@@ -673,13 +673,14 @@ function windowDurationHours(entry) {
   if (win === "monthly" || /month/i.test(name)) return 24 * 30; // 720h
   if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
   if (win === "daily" || /day/i.test(name)) return 24;         // 24h
-  // Antigravity publishes per-model buckets. The probe sends no duration, but
-  // live data shows Claude resets on a multi-day (weekly) cadence while
-  // G3Flash/G3Image are 5-hour. Classify by the stable window id so the durable
-  // bucket can receive rollover warnings. GPT-OSS is not displayed or alerted.
-  if (/^agy-claude$/.test(win)) return 24 * 7;                 // 168h
+  // Antigravity's per-model buckets (agy-claude, agy-g3flash, agy-g3image,
+  // agy-g4hydrogen) are 5h rolling windows: when unused, Google stamps reset =
+  // sample_time + 5h, so treating any of them as durable causes a ~12h rollover
+  // alert every ~2h as the reset drifts. Only Argon and the plan-level Gemini
+  // weekly bucket are durable Antigravity rollover windows.
+  if (/^agy-gemini-weekly$/.test(win)) return 24 * 7;
   if (/^agy-g4argon$/.test(win)) return 24 * 7;                // Argon summary is weekly
-  return 5; // 5h, rolling, agy-g3flash/g3image, etc.
+  return 5; // 5h, rolling, agy-claude/g3flash/g3image/g4hydrogen, etc.
 }
 
 function longestPeriodEntries(providers) {
@@ -690,6 +691,7 @@ function longestPeriodEntries(providers) {
     let bestHours = 0;
     for (const e of r.entries) {
       if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      if (id === "google-antigravity" && /claude|gpt|3p/i.test(`${e.name} ${e.window}`)) continue;
       // Only a window with something left can trigger a use-it-or-lose-it
       // warning. This also lets a shorter non-empty window win when the
       // longest window is already exhausted (OpenCode Go monthly 0% vs weekly).

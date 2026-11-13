@@ -810,13 +810,16 @@ midpoint stages described above. Only the configured near-exhaustion threshold
 (default 15%) and exhaustion remain. Old provider/window/destination receipts
 are preserved. No retired cookie/session notices are reintroduced.
 
-**Rollover / reset warning alerts (2026-09-17; refined 2026-10-23):** To ensure
+**Rollover / reset warning alerts (2026-09-17; refined 2026-10-23, 2026-11-13):** To ensure
 Dave can make maximum use of AI subscription allowances before they expire, the
 collector evaluates the longest durable allowance window **that still has
 allowance** per provider (monthly for OpenCode Go and Qwen; weekly for Claude,
-OpenAI, Z.ai; Antigravity's `agy-claude` bucket is treated as weekly because its
-live reset is multi-day, while `agy-g3flash`/`agy-g3image` are 5-hour and
-excluded; GPT-OSS is not an Antigravity alert window) and dispatches Telegram
+OpenAI, Z.ai; Antigravity's `agy-g4argon` and `agy-gemini-weekly` are weekly,
+while `agy-g3flash`/`agy-g3image`/`agy-g4hydrogen`/`agy-claude` are 5-hour
+rolling buckets and excluded; `agy-3p-weekly` and GPT-OSS stay out of alerts
+under the Claude/GPT rule — `agy-claude` used to be multi-day until Google split
+the buckets on 2026-11-12, and leaving it classified as weekly caused 2-hourly
+false `~12 hours` alerts while unused) and dispatches Telegram
 warnings (and configured webhooks) at T-24h and T-12h before reset when
 allowance remains (`percentRemaining > 0`).
 If the longest window is exhausted, a shorter durable window with remaining
