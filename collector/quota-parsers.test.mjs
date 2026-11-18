@@ -10,6 +10,7 @@ import {
   filterAntigravityDisplayEntries,
   renameAntigravityDisplayEntries,
   antigravityHydrogenEntry,
+  antigravityNeonEntry,
   antigravityG4ArgonUnavailable,
   antigravityQuotaSummaryArgon,
   antigravityQuotaSummaryWeekly,
@@ -95,6 +96,7 @@ test('extractAntigravityModelEntries maps the current Google offerings', () => {
     'claude-opus-5-5-high': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
     'gemini-3.1-flash-image': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'gemini-4-hydrogen-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
+    'gemini-4-neon-high': { quotaInfo: { remainingFraction: 1, resetTime: '2026-10-17T11:13:07Z' } },
     'gpt-oss-120b-medium': { quotaInfo: { remainingFraction: 0.4999584, resetTime: '2026-10-22T07:21:22Z' } },
   };
   const entries = extractAntigravityModelEntries(models);
@@ -105,6 +107,7 @@ test('extractAntigravityModelEntries maps the current Google offerings', () => {
     { name: 'Claude', renderType: 'percent', percentRemaining: 50, resetAt: '2026-10-22T07:21:22Z', window: 'agy-claude' },
     { name: 'Gemini Image', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g3image' },
     { name: 'Gemini Hydrogen', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g4hydrogen' },
+    { name: 'Gemini Neon', renderType: 'percent', percentRemaining: 100, resetAt: '2026-10-17T11:13:07Z', window: 'agy-g4neon' },
   ]);
 });
 
@@ -139,6 +142,24 @@ test('antigravity model catalogue exposes the new Gemini 4 Hydrogen offering', (
   assert.equal(antigravityHydrogenEntry(null), null);
   // Gemini 4 Carbon is listed but disabled (no quotaInfo): never invent a row.
   assert.equal(antigravityHydrogenEntry({ 'gemini-4-carbon-disabled': { displayName: 'Gemini 4 Carbon' } }), null);
+});
+
+test('antigravity model catalogue exposes the new Gemini 4 Neon offering', () => {
+  // Live 2026-11-18 shape: Gemini 4 Neon shares the Gemini 5h bucket on the daily host.
+  const models = {
+    'gemini-4-neon-xhigh': { displayName: 'Gemini 4 Neon (XHigh)', quotaInfo: { remainingFraction: 0.33500674, resetTime: '2026-11-19T00:08:20Z' } },
+    'gemini-4-neon-high': { displayName: 'Gemini 4 Neon (High)', quotaInfo: { remainingFraction: 0.33500674, resetTime: '2026-11-19T00:08:20Z' } },
+    'gemini-4-neon-medium': { displayName: 'Gemini 4 Neon (Medium)', quotaInfo: { remainingFraction: 0.33500674, resetTime: '2026-11-19T00:08:20Z' } },
+    'gemini-4-neon-low': { displayName: 'Gemini 4 Neon (Low)', quotaInfo: { remainingFraction: 0.33500674, resetTime: '2026-11-19T00:08:20Z' } },
+    'gemini-4-carbon-disabled': { displayName: 'Gemini 4 Carbon', quotaInfo: null },
+  };
+  assert.deepEqual(antigravityNeonEntry(models), {
+    name: 'Gemini Neon', renderType: 'percent', percentRemaining: 34,
+    resetAt: '2026-11-19T00:08:20Z', window: 'agy-g4neon',
+  });
+  assert.equal(antigravityNeonEntry({ 'gemini-4-carbon-disabled': { displayName: 'Gemini 4 Carbon', quotaInfo: null } }), null);
+  assert.equal(antigravityNeonEntry({}), null);
+  assert.equal(antigravityNeonEntry(null), null);
 });
 
 test('antigravity display drops GPT-OSS even when the host probe returns it', () => {

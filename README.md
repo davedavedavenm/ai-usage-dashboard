@@ -138,8 +138,8 @@ If the AccessKey source fails, the collector degrades through the legacy
 | Claude | `anthropic` (via opencode-quota CLI) | Claude Code OAuth (`claude login`) |
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` |
 | Z.ai | direct quota API + console subscription API (`biz/subscription/list`, for the plan renewal date) | auth.json `zai-coding-plan` API key |
-| OpenCode Go | direct usage API | auth.json `opencode-go` key |
-| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (Gemini Flash, Claude, Gemini Image from the CLI; Gemini Hydrogen from the daily model catalogue; G4Argon from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). Hydrogen shares the Gemini 5 h bucket; Gemini 4 Carbon is disabled and GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
+| OpenCode Go | direct usage API | Web UI Settings (`opencodeGoApiKey`, mirrored to `auth.json`) or `auth.json` `opencode-go` key |
+| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (Gemini Flash, Claude, Gemini Image from the CLI; Gemini Neon & Gemini Hydrogen from the daily model catalogue; G4Argon and weekly buckets from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). Neon & Hydrogen share the Gemini 5 h bucket; Gemini 4 Carbon is disabled and GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 | Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
 
@@ -161,6 +161,7 @@ Configured via the Settings tab (Telegram bot token/chat ID and optional webhook
 - `GET /api/health` — health check
 - `GET /api/settings`, `POST /api/settings` — masked settings view / update
 - `POST /api/collect` — triggers an immediate on-demand quota probe
+- `POST /api/opencode-go-test` — tests the OpenCode Go API key saved in Settings against the live usage API
 - `POST /api/telegram-test` — sends a test Telegram message
 - `POST /api/webhook-test` — sends a test webhook alert
 - `POST /api/ingest` — collector push endpoint (requires `X-Ingest-Key`)

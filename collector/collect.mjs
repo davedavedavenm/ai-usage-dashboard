@@ -11,6 +11,7 @@ import { ALI_APIS, aliCall, resolveAliSecToken, verifyAliCookie, writeSettingsAt
 import { grabAliCookieFromBrowser } from "./cdp-cookies.mjs";
 import { ZAI_WINDOW_NAMES, zaiLimitWindow, zaiRemainingPercent, parseZaiSubscription, isConstantAntigravityReport, parseAnthropicOAuthUsage, isoFrom, filterAntigravityDisplayEntries, renameAntigravityDisplayEntries, antigravityG4ArgonUnavailable } from "./quota-parsers.mjs";
 import { probeGooglePlan, antigravityPlaceholderMessage } from "./google-plan.mjs";
+import { resolveAndSyncOpenCodeGoKey } from "./opencode-go-key.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Stack data dir (settings.json, and plain-node state.json fallback). The
@@ -190,9 +191,8 @@ async function fetchZai(auth) {
   return { status: "ok", label: "Z.ai", entries: [...planRow, ...renewalRow, ...entries], note: "windows: " + entries.map(e => e.name).join(", ") + missing };
 }
 
-async function fetchOpenCodeGo(auth) {
-  const key = apiKey(auth, "opencode-go");
-  if (!key || typeof key === "object") return { status: "unavailable" };
+async function fetchOpenCodeGo(key) {
+  if (!key || typeof key !== "string") return { status: "unavailable" };
   const result = await getJson(GO_URL, { Authorization: "Bearer " + key, Accept: "application/json" });
   if (result.error) return { status: "error", error: "OpenCode Go API error " + result.error };
   const usage = result.body?.usage;
@@ -674,13 +674,13 @@ function windowDurationHours(entry) {
   if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
   if (win === "daily" || /day/i.test(name)) return 24;         // 24h
   // Antigravity's per-model buckets (agy-claude, agy-g3flash, agy-g3image,
-  // agy-g4hydrogen) are 5h rolling windows: when unused, Google stamps reset =
+  // agy-g4hydrogen, agy-g4neon) are 5h rolling windows: when unused, Google stamps reset =
   // sample_time + 5h, so treating any of them as durable causes a ~12h rollover
   // alert every ~2h as the reset drifts. Only Argon and the plan-level Gemini
   // weekly bucket are durable Antigravity rollover windows.
   if (/^agy-gemini-weekly$/.test(win)) return 24 * 7;
   if (/^agy-g4argon$/.test(win)) return 24 * 7;                // Argon summary is weekly
-  return 5; // 5h, rolling, agy-claude/g3flash/g3image/g4hydrogen, etc.
+  return 5; // 5h, rolling, agy-claude/g3flash/g3image/g4hydrogen/g4neon, etc.
 }
 
 function longestPeriodEntries(providers) {
@@ -945,6 +945,18 @@ async function runAlerts(providers, state, cfg, now = Date.now()) {
 async function main() {
   const auth = readAuth();
   const state = readState();
+  const dashSettings = readDashboardSettings();
+  const ocGo = resolveAndSyncOpenCodeGoKey({
+    auth,
+    authPath: AUTH_FILE,
+    settings: dashSettings,
+    env: envValue(readParentEnv(), "AIUD_OPENCODE_GO_API_KEY"),
+    state,
+    writeState,
+  });
+  if (ocGo.syncError) {
+    console.log(JSON.stringify({ at: new Date().toISOString(), warn: "opencode-go auth.json sync failed: " + ocGo.syncError }));
+  }
   const providers = {};
   const skipped = {};
   // Set when the Claude token refresher did anything but confirm a fresh
@@ -952,8 +964,7 @@ async function main() {
   // instead of "no usable entries in CLI output" (2026-11-02 incident).
   let claudeAuth = "";
   const radeonLoad = fetchRadeonLoad();
-  const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(auth), "radeon-cloud": await radeonLoad };
-  const dashSettings = readDashboardSettings();
+  const direct = { zai: await fetchZai(auth), "opencode-go": await fetchOpenCodeGo(ocGo.key), "radeon-cloud": await radeonLoad };
   const aliCookie = (typeof dashSettings.alibabaCookie === "string" && dashSettings.alibabaCookie) ||
     envValue(readParentEnv(), "AIUD_ALIBABA_COOKIE").replace(/^["']|["']$/g, "");
   const qwenKey = resolveQwenApiKey({
@@ -1065,12 +1076,18 @@ async function main() {
       // rows only show the 5h buckets, so without this the durable Gemini
       // allowance can read 100% while its weekly bucket is mostly used.
       const plan = await probeGooglePlan();
-      // Gemini 4 Hydrogen is a new offering the pinned CLI's catalogue UA
-      // cannot see (2026-11-12). It shares the Gemini 5h bucket, so publish
-      // the model's own quotaInfo beside the other Gemini rows.
-      if (plan?.hydrogen && !r.entries.some(e => e.window === plan.hydrogen.window)) {
-        r.entries.push(plan.hydrogen);
-        r.note = [r.note, "Gemini Hydrogen from Google's model catalogue"].filter(Boolean).join(" · ");
+      // Gemini 4 Neon and Hydrogen are newer offerings the pinned CLI's
+      // catalogue UA cannot see. Both share the Gemini 5h bucket, so publish
+      // their own quotaInfo entries beside the other Gemini rows.
+      const addedCatalogue = [];
+      for (const [entry, label] of [[plan?.neon, "Gemini Neon"], [plan?.hydrogen, "Gemini Hydrogen"]]) {
+        if (entry && !r.entries.some(e => e.window === entry.window)) {
+          r.entries.push(entry);
+          addedCatalogue.push(label);
+        }
+      }
+      if (addedCatalogue.length) {
+        r.note = [r.note, `${addedCatalogue.join(" & ")} from Google's model catalogue`].filter(Boolean).join(" · ");
       }
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
         if (plan?.argon) {

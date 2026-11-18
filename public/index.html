@@ -23,6 +23,7 @@
      (2026-10-03: Cascadia Mono shaped zero-width advances in Firefox). */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
 /* 125% of the browser default: the card labels and reset lines were tuning
    for 8-10px at the base breakpoint, which is too small to read comfortably.
    Relative sizing keeps the user's own font-size preference in effect. */
@@ -168,6 +169,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  margin-top: 14px;
 }
 .card {
   position: relative;
@@ -315,9 +317,11 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   padding: 9px; line-height: 1.5;
 }
 .card .hint code { color: var(--amber); }
+.hint-actions { margin-top: 8px; }
+.sbtn.hint-btn { font-size: .58rem; padding: 6px 10px; }
 
 /* ---------- C · signal board ---------- */
-.board { display: flex; flex-direction: column; border-top: 1px solid var(--panel-edge); }
+.board { display: flex; flex-direction: column; border-top: 1px solid var(--panel-edge); margin-top: 14px; }
 .band {
   display: grid;
   grid-template-columns: 12rem 5.5rem minmax(0, 1fr) 6.5rem;
@@ -327,7 +331,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   border-bottom: 1px solid var(--panel-edge);
   animation: arrive .3s ease both;
 }
-.band.crit {
+.band.crit, .band.state-crit {
   background: linear-gradient(90deg, rgba(242,93,93,.075), transparent 55%);
   border-left: 3px solid var(--red);
   padding-left: 10px;
@@ -344,7 +348,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .band-id .pstate { display: inline-block; margin-top: 5px; }
 .band-hero { grid-area: hero; }
 .band-hero .bignum { font-size: 2.3rem; }
-.band.crit .bignum { color: var(--red); }
+.band.crit .bignum, .band.state-crit .bignum { color: var(--red); }
 .band-window {
   font-family: var(--font-mono); font-size: .52rem; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-dim);
@@ -434,6 +438,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .settings {
   display: none; border: 1px solid var(--panel-edge);
   border-radius: 12px; background: var(--panel); padding: 20px;
+  margin-top: 14px;
 }
 .settings.show { display: block; }
 .shead { font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin: 0 0 3px; }
@@ -603,6 +608,7 @@ footer {
         <button type="button" data-view="a" aria-pressed="true">Instrument</button>
         <button type="button" data-view="c" aria-pressed="false">Signal</button>
       </div>
+      <button class="menu-btn" id="settingsBtn" type="button" onclick="switchTab('settings')" title="Settings" aria-label="Settings">⚙</button>
       <div class="topmenu-wrap">
         <button class="menu-btn" id="menuBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Open menu">⋯</button>
         <div class="menu-panel" id="menuPanel" hidden>
@@ -618,6 +624,28 @@ footer {
   <section class="settings" id="settingsPanel">
     <div class="srow" style="margin-top:0;margin-bottom:4px">
       <button class="sbtn secondary" type="button" onclick="switchTab('dash')">← Dashboard</button>
+    </div>
+    <div class="sblock">
+      <div class="shead">OpenCode Go</div>
+      <div class="ssub">API key for opencode.ai/zen/go/v1/usage · stored masked on server &amp; synced to opencode auth.json</div>
+      <div class="srow">
+        <span class="sstate" id="ocgoState">checking…</span>
+        <span class="smsg" id="ocgoMsg" style="margin-top:0"></span>
+      </div>
+      <div class="srow" style="align-items:flex-start">
+        <div style="flex:1;min-width:260px">
+          <label for="ocgoKey">OpenCode Go API key</label>
+          <input type="password" id="ocgoKey" style="width:100%" placeholder="Paste new OpenCode Go API key…" autocomplete="new-password" spellcheck="false">
+        </div>
+      </div>
+      <div class="srow">
+        <button class="sbtn" id="ocgoSave" type="button" onclick="saveOpenCodeGo()">Save &amp; Verify</button>
+        <button class="sbtn secondary" id="ocgoTest" type="button" onclick="testOpenCodeGo()">Test saved key</button>
+        <button class="sbtn secondary" id="ocgoClear" type="button" onclick="clearOpenCodeGo()">Clear override</button>
+      </div>
+      <div class="steps">
+        Create a key in OpenCode Console (<code>opencode.ai/zen</code>), paste it above, and click <b>Save &amp; Verify</b>. The collector mirrors it to khpi5 <code>auth.json</code> and refreshes the card automatically.
+      </div>
     </div>
     <div class="sblock">
       <div class="shead">Qwen · Alibaba Token Plan</div>
@@ -640,7 +668,7 @@ footer {
         </div>
         <i>Accept the self-signed certificate warning; credentials are in the stack <code>.env</code> file. The open ModelStudio tab keeps your session alive automatically.</i>
       </div>
-      <details style="margin-top:14px;font-size:12px;color:var(--ink-dim)">
+      <details style="margin-top:14px;font-size:.72rem;color:var(--ink-dim)">
         <summary style="cursor:pointer;color:var(--ink);margin-bottom:8px">Advanced: Manual Cookie Fallback (Optional)</summary>
         <label for="aliCookie">Console Cookie header (paste full header)</label>
         <textarea id="aliCookie" placeholder="isg=…; cna=…; login_aliyunid_ticket=…;" spellcheck="false"></textarea>
@@ -700,7 +728,7 @@ footer {
     <div class="sblock">
       <div class="steps" style="margin-top:0">
         <b>Notes:</b> secrets are stored only on the server (<code>data/settings.json</code>, never committed), shown masked here, and the dashboard is LAN-only.
-        Claude / ChatGPT / Z.ai / OpenCode Go / Gemini use OAuth logins on the server — see the dashboard card hints or the repo README for the SSH recipe.
+        Claude, ChatGPT, and Gemini use OAuth logins on the server; Z.ai and OpenCode Go use API keys (OpenCode Go can be updated above).
       </div>
     </div>
   </section>
@@ -719,7 +747,7 @@ const META = {
   anthropic:            { name: "Claude",            sub: "Anthropic Max/Pro",     accent: "#e5484d", hint: "On the server: refresh Anthropic login (claude / opencode auth)." },
   openai:               { name: "ChatGPT",           sub: "OpenAI Plus/Pro",       accent: "#10a37f", hint: "On the server: <code>opencode auth login -p openai</code>" },
   zai:                  { name: "Z.ai",              sub: "GLM Coding Plan",       accent: "#ec4899", hint: "Check <code>opencode auth</code> for zai-coding-plan." },
-  "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Check <code>opencode auth</code> for opencode-go." },
+  "opencode-go":        { name: "OpenCode Go",       sub: "opencode.ai",           accent: "#f2a93b", hint: "Update the OpenCode Go API key in Settings, or check <code>opencode auth</code> for opencode-go on the server." },
   "google-antigravity": { name: "Gemini · Antigravity", sub: "Google AI",          accent: "#5b8def", hint: "On the server: <code>opencode auth login</code> → Google (Antigravity)." },
   "alibaba-coding-plan":{ name: "Qwen",              sub: "Token Plan",            accent: "#9d7bea", hint: "Percentages come from the Alibaba token-plan usage API, called directly with a console token that <code>bailian-cli</code> self-refreshes from the main-account AccessKey stored on khpi5 (<code>data/bailian/config.json</code>) — no browser, no login. If the card degrades to the amber <b>key mode</b> chip, check <code>docker compose logs collector</code>, then re-run <code>collector/qwen-openapi-setup.sh</code>. The legacy <code>qwen-browser</code> desktop (compose profile <code>qwen</code>, normally off) remains a fallback." },
   "qwen-code":          { name: "Qwen Code",         sub: "qwen.ai",               accent: "#f97316" },
@@ -796,7 +824,7 @@ function windowTag(w, name) {
 }
 const WIN_ORDER = {
   "5h": 0, fiveHour: 0, rolling: 0,
-  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0, "agy-g4hydrogen": 0,
+  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0, "agy-g4hydrogen": 0, "agy-g4neon": 0,
   weekly: 1, "agy-gemini-weekly": 1, "agy-3p-weekly": 1, "agy-g4argon": 1,
   monthly: 2, mcp: 3,
 };
@@ -805,7 +833,7 @@ const WIN_ORDER = {
 // inside that ~5h rolling horizon; when capped by a multi-day weekly reset
 // (> 6h out), show the real reset clock instead.
 function isRollingWindow(w, resetAt) {
-  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|claude)$/i.test(w || "");
+  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|g4neon|claude)$/i.test(w || "");
   if (!is5hRolling) return false;
   if (!resetAt) return true;
   const delta = Date.parse(resetAt) - Date.now();
@@ -816,13 +844,15 @@ function sortWindows(a, b) {
   const pb = WIN_ORDER[b.window] ?? 9;
   return (pa - pb) || (a.name || "").localeCompare(b.name || "");
 }
-// Dave's default Antigravity model is Gemini Hydrogen (2026-11-12), so the
-// hero number follows that model whenever Google reports it. The card's
-// low-allowance state still follows the tightest Gemini window below, so a
-// nearly-exhausted Argon bar cannot be hidden by a healthy Hydrogen hero.
+// Dave's default Antigravity model is Gemini 4 Neon (2026-11-18), falling back
+// to Gemini Hydrogen then the tightest Gemini window. The card's low-allowance
+// state still follows the tightest Gemini window below, so a nearly-exhausted
+// Argon bar cannot be hidden by a healthy hero.
 function antigravityHeroEntry(percents) {
   const all = percents || [];
-  return all.find(e => /^agy-g4hydrogen$/i.test(e.window || "")) || antigravityBindingEntry(all);
+  return all.find(e => /^agy-g4neon$/i.test(e.window || "")) ||
+    all.find(e => /^agy-g4hydrogen$/i.test(e.window || "")) ||
+    antigravityBindingEntry(all);
 }
 
 // The binding window is the lowest non-Claude/GPT allowance (Gemini Flash,
@@ -926,6 +956,22 @@ function valueA(e, id) {
   return `<div class="vline${isFallback ? " degrade" : ""}"><span>${esc(e.name)}</span><b>${esc(e.value ?? "")}</b></div>`;
 }
 
+function openSettings(focusId) {
+  switchTab("settings");
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) el.focus();
+  }
+}
+
+function hintMarkup(m) {
+  const text = m.status === "error" ? esc(m.hint) : m.hint;
+  const action = m.id === "opencode-go"
+    ? `<div class="hint-actions"><button class="sbtn secondary hint-btn" type="button" onclick="openSettings('ocgoKey')">Update API key in Settings →</button></div>`
+    : "";
+  return `<div class="hint">${text}${action}</div>`;
+}
+
 function renderA(m) {
   const wide = m.id === "radeon-cloud" ? " wide" : "";
   const inlineId = m.id === "radeon-cloud" ? " inline-id" : "";
@@ -934,7 +980,7 @@ function renderA(m) {
     ${m.stateChip}
   </div>`;
   if (!m.alive) {
-    return `<section class="card ${m.cls}${m.stateCls}${wide}" style="--accent:${m.meta.accent}" data-provider="${m.id}">${head}<div class="hint">${m.status === "error" ? esc(m.hint) : m.hint}</div></section>`;
+    return `<section class="card ${m.cls}${m.stateCls}${wide}" style="--accent:${m.meta.accent}" data-provider="${m.id}">${head}${hintMarkup(m)}</section>`;
   }
   let body = "";
   if (m.hero) {
@@ -977,7 +1023,7 @@ function renderC(m) {
   if (!m.alive) {
     return `<section class="band ${m.cls}${m.stateCls}" style="--accent:${m.meta.accent}" data-provider="${m.id}">
       ${head}<div class="band-hero"><div class="band-empty">—</div></div>
-      <div class="band-bars"><div class="hint">${m.status === "error" ? esc(m.hint) : m.hint}</div></div>
+      <div class="band-bars">${hintMarkup(m)}</div>
       <div class="band-reset"></div><div class="band-meta"></div></section>`;
   }
   let hero = "";
@@ -1220,6 +1266,26 @@ async function loadSettings() {
   try {
     const r = await fetch("/api/settings", { cache: "no-store" });
     const s = await r.json();
+    const ocgoState = document.getElementById("ocgoState");
+    const ocProv = state && state.envelope && state.envelope.providers && state.envelope.providers["opencode-go"];
+    if (s.opencodeGo && s.opencodeGo.apiKeySet) {
+      if (ocProv && ocProv.status === "error") {
+        ocgoState.textContent = "configured · " + s.opencodeGo.apiKeyMask + " · last probe errored";
+        ocgoState.className = "sstate bad";
+      } else {
+        ocgoState.textContent = "configured · " + s.opencodeGo.apiKeyMask;
+        ocgoState.className = "sstate ok";
+      }
+    } else if (ocProv && ocProv.status === "error") {
+      ocgoState.textContent = "host auth.json key rejected — paste new key below";
+      ocgoState.className = "sstate bad";
+    } else if (ocProv && ocProv.status === "ok") {
+      ocgoState.textContent = "using host auth.json (live)";
+      ocgoState.className = "sstate ok";
+    } else {
+      ocgoState.textContent = "not set in Settings (uses host auth.json)";
+      ocgoState.className = "sstate";
+    }
     const aliState = document.getElementById("aliState");
     if (s.alibaba.cookieTruncated) {
       aliState.textContent = "saved but TRUNCATED — re-copy";
@@ -1250,9 +1316,123 @@ async function loadSettings() {
     document.getElementById("tgChat").value = s.telegram.chatId || "";
     document.getElementById("tgThreshold").value = s.telegram.threshold;
   } catch {
+    document.getElementById("ocgoState").textContent = "cannot reach server";
     document.getElementById("aliState").textContent = "cannot reach server";
     document.getElementById("tgState").textContent = "cannot reach server";
     document.getElementById("whState").textContent = "cannot reach server";
+  }
+}
+
+async function saveOpenCodeGo() {
+  const msg = document.getElementById("ocgoMsg");
+  const input = document.getElementById("ocgoKey");
+  const btn = document.getElementById("ocgoSave");
+  const testBtn = document.getElementById("ocgoTest");
+  const clearBtn = document.getElementById("ocgoClear");
+  const key = input.value.trim();
+  if (!key) {
+    msg.textContent = "paste an API key first";
+    msg.className = "smsg err";
+    input.focus();
+    return;
+  }
+  btn.disabled = true;
+  testBtn.disabled = true;
+  clearBtn.disabled = true;
+  msg.textContent = "saving…";
+  msg.className = "smsg";
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ opencodeGoApiKey: key }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      msg.textContent = j.error || "save failed";
+      msg.className = "smsg err";
+      return;
+    }
+    input.value = "";
+    loadSettings();
+    msg.textContent = "saved — verifying with OpenCode Go…";
+    const tr = await fetch("/api/opencode-go-test", { method: "POST" });
+    const tj = await tr.json().catch(() => ({}));
+    if (tr.ok && tj.ok) {
+      const winText = Array.isArray(tj.windows) && tj.windows.length ? " (" + tj.windows.join(", ") + ")" : "";
+      msg.textContent = "saved & verified" + winText + " — syncing dashboard…";
+      msg.className = "smsg ok";
+    } else {
+      msg.textContent = "saved, but OpenCode Go rejected key (" + (tj.detail || ("HTTP " + (tj.status || tr.status))) + ")";
+      msg.className = "smsg err";
+    }
+    setTimeout(() => {
+      refresh().then(() => {
+        if (document.getElementById("settingsPanel").classList.contains("show")) loadSettings();
+      });
+    }, 4500);
+  } catch (e) {
+    msg.textContent = "save failed: " + e.message;
+    msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+    testBtn.disabled = false;
+    clearBtn.disabled = false;
+  }
+}
+
+async function testOpenCodeGo() {
+  const msg = document.getElementById("ocgoMsg");
+  const btn = document.getElementById("ocgoTest");
+  btn.disabled = true;
+  msg.textContent = "testing…";
+  msg.className = "smsg";
+  try {
+    const r = await fetch("/api/opencode-go-test", { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) {
+      const winText = Array.isArray(j.windows) && j.windows.length ? j.windows.join(", ") : "HTTP 200";
+      msg.textContent = "verified: " + winText;
+      msg.className = "smsg ok";
+    } else {
+      msg.textContent = "failed: " + (j.error || j.detail || ("status " + (j.status || r.status)));
+      msg.className = "smsg err";
+    }
+  } catch (e) {
+    msg.textContent = "failed: " + e.message;
+    msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function clearOpenCodeGo() {
+  const msg = document.getElementById("ocgoMsg");
+  const btn = document.getElementById("ocgoClear");
+  btn.disabled = true;
+  msg.textContent = "clearing…";
+  msg.className = "smsg";
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ opencodeGoApiKey: "" }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      msg.textContent = j.error || "clear failed";
+      msg.className = "smsg err";
+    } else {
+      document.getElementById("ocgoKey").value = "";
+      msg.textContent = "override cleared — using host auth.json";
+      msg.className = "smsg ok";
+      loadSettings();
+    }
+  } catch (e) {
+    msg.textContent = "clear failed: " + e.message;
+    msg.className = "smsg err";
+  } finally {
+    btn.disabled = false;
   }
 }
 

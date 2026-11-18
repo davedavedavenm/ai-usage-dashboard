@@ -635,6 +635,43 @@ The card's low-allowance state, page title and "Usable" chip still use
 keeps its warning even while the Hydrogen hero reads healthy. Alerts are
 unchanged (tightest window per provider).
 
+## Antigravity tracks Gemini 4 Neon and leads the Gemini card with it — Active (2026-11-18)
+
+On 2026-11-18 the daily `v1internal:fetchAvailableModels` catalogue and
+`Gemini Models` summary group (`Gemini 4 Neon, Gemini 4 Hydrogen, Gemini 3.8 Flash`)
+added **Gemini 4 Neon** (`gemini-4-neon-{high,medium,low,xhigh}`). Like
+Hydrogen, it shares the Gemini 5 h bucket and is hidden from the pinned
+`opencode-quota@4.8.1` CLI's older UA (`antigravity/1.11.9`); **Gemini 4 Carbon**
+(`gemini-4-carbon-disabled`) remains disabled with `quotaInfo: null`.
+
+- `google-plan.mjs` reads `antigravityNeonEntry()` (`agy-g4neon`, **Gemini Neon**)
+  from the daily `fetchAvailableModels` response alongside `antigravityHydrogenEntry()`.
+- `collector/Dockerfile` and `quota-parsers.mjs` also prepend the discrete
+  `gemini-3.8-flash-{high,medium,low}` keys ahead of `gemini-3.8-flash-tiered` so
+  the Flash row resolves cleanly through future catalogue trims.
+- `antigravityHeroEntry()` now prefers `agy-g4neon` first, falling back to
+  `agy-g4hydrogen` and then the tightest Gemini window; `agy-g4neon` is a
+  5 h rolling bucket (excluded from rollover alerts, kept in threshold alerts).
+
+## OpenCode Go API key is updatable from Web UI Settings and mirrored to `auth.json` by hash — Active (2026-11-18)
+
+OpenCode Go keys expire periodically (returning `401 Unauthorized` / `AuthError`),
+and requiring SSH + `opencode auth login -p opencode-go` on khpi5 created friction
+just to swap an API key.
+
+- `server.js` accepts `opencodeGoApiKey` in `POST /api/settings` (persisted in
+  `data/settings.json` with mode `0600`, masked in `GET /api/settings` and API
+  responses, never logged), writes `data/collect.trigger` immediately, and adds
+  `POST /api/opencode-go-test` to verify the saved key live against
+  `https://opencode.ai/zen/go/v1/usage`.
+- `collector/opencode-go-key.mjs` mirrors `settings.opencodeGoApiKey` into
+  `~/.local/share/opencode/auth.json` (`"opencode-go": { type: "api", key }`)
+  atomically (`0600`, re-reading `auth.json` fresh so OAuth rotations are not
+  clobbered) **once per SHA-256 hash** (`state.syncedOpenCodeGoKeyHash` — never
+  storing the plaintext key in state). Once a hash is synced, a newer interactive
+  `opencode auth login -p opencode-go` in `auth.json` still wins without
+  split-brain until Settings saves a different key.
+
 ## OpenCode Go hero reads 0% when any window is capped — Active (2026-10-23)
 
 Dave: "i have no allowance left, why is it saying 10%". OpenCode Go reports
@@ -734,7 +771,7 @@ for fresh installs, and khpi5's `.env` pins LAN + tailnet.
 | ChatGPT (openai) | opencode-quota CLI | opencode `auth.json` OAuth entry | **automatic**: `chatgpt-token.mjs` refreshes via OAuth refresh_token ≥30 min before expiry (rotation written back, backoff state in `~/.local/share/opencode/.openai-oauth-refresh.json`); manual re-login only if the refresh token itself is revoked — `opencode auth login -p openai` |
 | Gemini/Antigravity | opencode-quota CLI (`google-antigravity`, `googleModels` = plan model windows) | `~/.config/opencode/antigravity-accounts.json` | n/a while account valid (refresh handled inside the plugin's account store; manual re-login via `opencode auth login` → Google (Antigravity) if it ages out) |
 | Z.ai | direct quota API (`monitor/usage/quota/limit`) + console subscription API (`biz/subscription/list`) | `auth.json` API key | n/a (long-lived key); billing renewal date read from the subscription endpoint — live plan is **annual**, next renewal 2027-09-22 |
-| OpenCode Go | direct usage API | `auth.json` API key | **manual** — key carries an expiry date; renew via OpenCode Console + `opencode auth login -p opencode-go` on khpi5 (see note below) |
+| OpenCode Go | direct usage API | `auth.json` API key (or Web UI Settings mirrored to `auth.json`) | **manual** — key expires; renew in Web UI Settings (or via OpenCode Console + `opencode auth login -p opencode-go` on khpi5) |
 | Qwen (Alibaba Token Plan) | token-plan usage API via `bailian-cli` (real percentages); token-plan key probe fallback | main-account AccessKey at `data/bailian/config.json` (self-refreshing console token) + `auth.json` key | **automatic** — token refresh via the AccessKey; browser path retired 2026-09-14 |
 
 A manual `claude login` / `opencode auth login` is a **fallback**, not part of

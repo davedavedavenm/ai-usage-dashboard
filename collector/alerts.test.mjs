@@ -357,6 +357,7 @@ test('rollover alerts: short rolling windows (< 24h duration) never trigger roll
       label: 'Google Antigravity',
       entries: [
         { name: 'G3Flash', window: 'agy-g3flash', resetAt, renderType: 'percent', percentRemaining: 80 },
+        { name: 'Gemini Neon', window: 'agy-g4neon', resetAt, renderType: 'percent', percentRemaining: 75 },
         { name: '5h', window: '5h', resetAt, renderType: 'percent', percentRemaining: 50 },
         { name: 'Last 5 hours', window: 'rolling', resetAt, renderType: 'percent', percentRemaining: 90 },
       ],
@@ -365,6 +366,20 @@ test('rollover alerts: short rolling windows (< 24h duration) never trigger roll
   const t3 = new Date('2026-09-20T09:00:00Z').getTime(); // 3 hours before reset
   await h.context.runRolloverAlerts(data, state, cfg, t3);
   assert.equal(h.calls.length, 0);
+
+  // Still participates normally in threshold alerts when low
+  const lowData = {
+    'google-antigravity': {
+      label: 'google-antigravity',
+      entries: [
+        { name: 'Gemini Neon', window: 'agy-g4neon', resetAt, renderType: 'percent', percentRemaining: 10 },
+        { name: 'Claude', window: 'agy-claude', resetAt, renderType: 'percent', percentRemaining: 100 },
+      ],
+    },
+  };
+  await h.context.runAlerts(lowData, {}, { ...config, webhookUrl: '' }, t3);
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0].body.text, /Gemini Neon — nearly out/);
 });
 
 test('rollover alerts: new reset period clears dedupe and allows new cycle of warnings', async () => {

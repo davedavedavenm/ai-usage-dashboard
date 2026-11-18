@@ -26,7 +26,8 @@ function readSettings() {
 
 function writeSettings(s) {
   const tmp = SETTINGS + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(s, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(tmp, 0o600); } catch {}
   fs.renameSync(tmp, SETTINGS);
 }
 
@@ -65,6 +66,10 @@ function settingsView() {
     qwen: {
       apiKeySet: typeof s.qwenApiKey === "string" && s.qwenApiKey.length > 20,
       apiKeyMask: maskSecret(typeof s.qwenApiKey === "string" ? s.qwenApiKey : ""),
+    },
+    opencodeGo: {
+      apiKeySet: typeof s.opencodeGoApiKey === "string" && s.opencodeGoApiKey.length > 0,
+      apiKeyMask: maskSecret(typeof s.opencodeGoApiKey === "string" ? s.opencodeGoApiKey : ""),
     },
   };
 }
@@ -206,8 +211,27 @@ const server = http.createServer((req, res) => {
         else if (/[^\x20-\x7E]/.test(k)) return send(422, '{"error":"API key contains non-ASCII characters"}');
         else s.qwenApiKey = k;
       }
+      let triggerCollect = false;
+      if (typeof parsed.opencodeGoApiKey === "string") {
+        const k = parsed.opencodeGoApiKey.trim();
+        if (k === "") {
+          delete s.opencodeGoApiKey;
+        } else if (/[^\x20-\x7E]/.test(k) || /\s/.test(k)) {
+          return send(422, '{"error":"OpenCode Go API key contains invalid characters or whitespace"}');
+        } else if (k.length < 10) {
+          return send(422, '{"error":"OpenCode Go API key looks too short"}');
+        } else {
+          s.opencodeGoApiKey = k;
+          triggerCollect = true;
+        }
+      }
       try {
         writeSettings(s);
+        if (triggerCollect) {
+          try {
+            fs.writeFileSync(TRIGGER_FILE, JSON.stringify({ at: Date.now() }));
+          } catch {}
+        }
         return send(200, JSON.stringify(settingsView()));
       } catch (e) {
         return send(500, '{"error":"storage failure"}');
@@ -285,6 +309,56 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/opencode-go-test") {
+    const s = readSettings();
+    const key = typeof s.opencodeGoApiKey === "string" ? s.opencodeGoApiKey.trim() : "";
+    if (!key) return send(422, '{"error":"save an OpenCode Go API key first in Settings"}');
+    let replied = false;
+    const reply = (code, payload) => {
+      if (replied) return;
+      replied = true;
+      send(code, JSON.stringify(payload));
+    };
+    const gr = https.request(
+      "https://opencode.ai/zen/go/v1/usage",
+      { method: "GET", headers: { Authorization: "Bearer " + key, Accept: "application/json" }, timeout: 10000 },
+      (r) => {
+        let gb = "";
+        r.on("data", (c) => (gb += c));
+        r.on("end", () => {
+          let parsed = null;
+          try { parsed = JSON.parse(gb); } catch {}
+          const usage = parsed && parsed.usage && typeof parsed.usage === "object" ? parsed.usage : null;
+          if (r.statusCode === 200 && usage) {
+            const windows = [];
+            for (const win of ["rolling", "weekly", "monthly"]) {
+              const w = usage[win];
+              if (w && typeof w.percent === "number") {
+                const left = Math.max(0, Math.min(100, Math.round(100 - w.percent)));
+                windows.push(`${win} ${left}% left${w.status && w.status !== "ok" ? " (" + w.status + ")" : ""}`);
+              }
+            }
+            if (windows.length) return reply(200, { ok: true, status: 200, windows });
+            return reply(502, { ok: false, status: 200, detail: "usage response missing windows" });
+          }
+          const rawDetail = (parsed && parsed.error && parsed.error.message) || (parsed && parsed.message) || gb || ("HTTP " + r.statusCode);
+          const detail = String(rawDetail).split(key).join("[redacted]").trim().slice(0, 140);
+          reply(502, { ok: false, status: r.statusCode || 502, detail });
+        });
+      }
+    );
+    gr.on("error", (e) => {
+      const detail = String(e.message || e).split(key).join("[redacted]").slice(0, 140);
+      reply(502, { ok: false, status: 502, detail });
+    });
+    gr.on("timeout", () => {
+      gr.destroy();
+      reply(504, { ok: false, status: 504, detail: "timeout" });
+    });
+    gr.end();
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/ingest") {
     if (!keyMatches(req.headers["x-ingest-key"])) return send(401, '{"error":"unauthorized"}');
     let body = Buffer.alloc(0);
@@ -336,7 +410,7 @@ const server = http.createServer((req, res) => {
             const winKey = e.window || e.name || "default";
             w[`${id}:${winKey}`] = e.percentRemaining;
             if (id === "google-antigravity") {
-              const isClaudeOrGpt = /claude|gpt/i.test(`${e.name} ${e.window}`);
+              const isClaudeOrGpt = /claude|gpt|3p/i.test(`${e.name} ${e.window}`);
               const isG3Flash = /flash/i.test(`${e.name} ${e.window}`);
               if (isG3Flash) {
                 geminiPreferred = e.percentRemaining;

@@ -172,8 +172,11 @@ const ANTIGRAVITY_MODEL_SPECS = [
     name: "Gemini Flash",
     window: "agy-g3flash",
     keys: [
-      "gemini-3-flash",
+      "gemini-3.8-flash-high",
+      "gemini-3.8-flash-medium",
+      "gemini-3.8-flash-low",
       "gemini-3.8-flash-tiered",
+      "gemini-3-flash",
       "gemini-3.6-flash-high",
       "gemini-3.6-flash-medium",
       "gemini-3.6-flash-low",
@@ -226,6 +229,19 @@ const ANTIGRAVITY_MODEL_SPECS = [
     ],
     prefixRe: /^gemini-4-hydrogen/i,
   },
+  {
+    id: "G4NEON",
+    name: "Gemini Neon",
+    window: "agy-g4neon",
+    keys: [
+      "gemini-4-neon-high",
+      "gemini-4-neon-medium",
+      "gemini-4-neon-low",
+      "gemini-4-neon-xhigh",
+      "gemini-4-neon",
+    ],
+    prefixRe: /^gemini-4-neon/i,
+  },
 ];
 
 export function extractAntigravityModelEntries(modelsMap) {
@@ -272,6 +288,21 @@ export function renameAntigravityDisplayEntries(entries) {
   });
 }
 
+function antigravityCatalogueModelEntry(modelsMap, keyRe, name, window) {
+  if (!modelsMap || typeof modelsMap !== "object") return null;
+  const key = Object.keys(modelsMap).find(k => keyRe.test(k) && modelsMap[k]?.quotaInfo);
+  if (!key) return null;
+  const quota = modelsMap[key].quotaInfo;
+  if (typeof quota.remainingFraction !== "number" || !Number.isFinite(quota.remainingFraction)) return null;
+  return {
+    name,
+    renderType: "percent",
+    percentRemaining: Math.round(Math.max(0, Math.min(1, quota.remainingFraction)) * 100),
+    resetAt: typeof quota.resetTime === "string" && quota.resetTime.trim() ? quota.resetTime.trim() : undefined,
+    window,
+  };
+}
+
 // Gemini 4 Hydrogen is a new offering (2026-11-12) listed only by the daily
 // host's fetchAvailableModels catalogue and only under the newer AGY UA the
 // pinned quota CLI does not send. It shares the Gemini 5h bucket with Flash
@@ -279,18 +310,13 @@ export function renameAntigravityDisplayEntries(entries) {
 // let the card show it beside the other Gemini rows. Gemini 4 Carbon is listed
 // as *-disabled with no quotaInfo and must never become a row.
 export function antigravityHydrogenEntry(modelsMap) {
-  if (!modelsMap || typeof modelsMap !== "object") return null;
-  const key = Object.keys(modelsMap).find(k => /^gemini-4-hydrogen(?:-|$)/i.test(k) && modelsMap[k]?.quotaInfo);
-  if (!key) return null;
-  const quota = modelsMap[key].quotaInfo;
-  if (typeof quota.remainingFraction !== "number" || !Number.isFinite(quota.remainingFraction)) return null;
-  return {
-    name: "Gemini Hydrogen",
-    renderType: "percent",
-    percentRemaining: Math.round(Math.max(0, Math.min(1, quota.remainingFraction)) * 100),
-    resetAt: typeof quota.resetTime === "string" && quota.resetTime.trim() ? quota.resetTime.trim() : undefined,
-    window: "agy-g4hydrogen",
-  };
+  return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-hydrogen(?:-|$)/i, "Gemini Hydrogen", "agy-g4hydrogen");
+}
+
+// Gemini 4 Neon (2026-11-18) shares the Gemini 5h bucket and is likewise only
+// exposed via the daily fetchAvailableModels catalogue with the newer AGY UA.
+export function antigravityNeonEntry(modelsMap) {
+  return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-neon(?:-|$)/i, "Gemini Neon", "agy-g4neon");
 }
 
 // GPT-OSS is not an Antigravity model Dave uses. The host quota config may
