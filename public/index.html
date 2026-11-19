@@ -233,8 +233,8 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .bignum small { font-size: .9rem; font-weight: 500; color: var(--ink-dim); letter-spacing: 0; }
 .heroside { min-width: 0; }
 .wtag2 {
-  font-family: var(--font-mono); font-size: .55rem; letter-spacing: .1em;
-  color: var(--ink-dim); text-transform: uppercase;
+  font-family: var(--font-mono); font-size: .68rem; font-weight: 700; letter-spacing: .09em;
+  color: var(--ink); text-transform: uppercase;
 }
 .hreset2 {
   font-family: var(--font-mono); font-size: .62rem; color: var(--ink-dim);
@@ -278,6 +278,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
   white-space: normal; line-height: 1.25; text-align: right;
 }
 .mini.capped .mtag, .mini.capped .mpct, .mini.capped .mreset, .mini.capped .mmeter { opacity: .45; }
+.mini.hero-row .mtag { color: var(--ink); font-weight: 700; }
 .loadgrid {
   margin-top: 10px; border-top: 1px solid var(--panel-edge);
   padding-top: 9px; display: grid;
@@ -351,7 +352,7 @@ body[data-view="c"] .syncline { text-transform: uppercase; letter-spacing: .08em
 .band.crit .bignum, .band.state-crit .bignum { color: var(--red); }
 .band-window {
   font-family: var(--font-mono); font-size: .52rem; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--ink-dim);
+  text-transform: uppercase; color: var(--ink); font-weight: 600;
   margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .band-bars { grid-area: bars; min-width: 0; }
@@ -509,7 +510,7 @@ footer {
   .heroside { text-align: right; }
   .bignum { font-size: clamp(4.4rem, 5vw, 6rem); }
   .bignum small { font-size: 1.35rem; }
-  .wtag2 { font-size: .72rem; }
+  .wtag2 { font-size: .88rem; }
   .hreset2 { font-size: .82rem; }
   .primarybar { height: 9px; }
   .minis { gap: 8px; }
@@ -824,9 +825,9 @@ function windowTag(w, name) {
 }
 const WIN_ORDER = {
   "5h": 0, fiveHour: 0, rolling: 0,
-  "agy-g3flash": 0, "agy-g3image": 0, "agy-g3pro": 0, "agy-claude": 0, "agy-g4hydrogen": 0, "agy-g4neon": 0,
-  weekly: 1, "agy-gemini-weekly": 1, "agy-3p-weekly": 1, "agy-g4argon": 1,
-  monthly: 2, mcp: 3,
+  "agy-g4neon": 0, "agy-g4hydrogen": 1, "agy-g3flash": 2, "agy-g3image": 3, "agy-g3pro": 4, "agy-claude": 5,
+  weekly: 6, "agy-g4argon": 7, "agy-gemini-weekly": 8, "agy-3p-weekly": 9,
+  monthly: 10, mcp: 11,
 };
 // OpenCode Go and the Antigravity per-model 5h buckets stamp reset = sample
 // time + 5h while unused. Only mark them rolling when the reset is still
@@ -902,7 +903,7 @@ function cardModel(id, prov) {
         });
     }
   }
-  const others = percents.filter(e => e !== hero);
+  const others = id === "google-antigravity" ? percents : percents.filter(e => e !== hero);
   const capped = percents.some(e => e.limited === true);
   let bindingPct = null;
   if (percents.length) {
@@ -924,14 +925,14 @@ function cardModel(id, prov) {
 
 const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 
-function miniA(e, capped) {
+function miniA(e, capped, isHero) {
   const p = clampPct(e.percentRemaining);
   const rolling = isRollingWindow(e.window, e.resetAt);
   const reset = e.resetAt
     ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>${rolling ? ' <span class="wclock">· rolling</span>' : ""}`
     : "rolling";
   const title = `${e.name || ""}${capped ? " · unusable until the capped window resets" : ""}`;
-  return `<div class="mini${capped ? " capped" : ""}" title="${esc(title)}">
+  return `<div class="mini${capped ? " capped" : ""}${isHero ? " hero-row" : ""}" title="${esc(title)}">
     <span class="mtag">${windowTag(e.window, e.name)}</span>
     <span class="mmeter ${pctClass(p)}"><i style="width:${p}%"></i></span>
     <span class="mpct ${pctClass(p)}">${Math.round(p)}%</span>
@@ -998,7 +999,7 @@ function renderA(m) {
     <div class="primarybar"><i style="width:${p}%"></i></div>`;
   }
   if (m.others.length) {
-    body += `<div class="minis">${m.others.map(e => miniA(e, m.capped)).join("")}</div>`;
+    body += `<div class="minis">${m.others.map(e => miniA(e, m.capped, e === m.hero)).join("")}</div>`;
   }
   if (m.loads.length) {
     body += `<div class="loadgrid">${m.loads.map(loadA).join("")}</div>`;
@@ -1009,9 +1010,9 @@ function renderA(m) {
   return `<section class="card ${m.cls}${m.stateCls}${wide}" style="--accent:${m.meta.accent}" data-provider="${m.id}">${head}${body}</section>`;
 }
 
-function miniC(e) {
+function miniC(e, isHero) {
   const p = clampPct(e.percentRemaining);
-  return `<div class="mini" title="${esc(e.name)}">
+  return `<div class="mini${isHero ? " hero-row" : ""}" title="${esc(e.name)}">
     <span class="mtag">${windowTag(e.window, e.name)}</span>
     <span class="mmeter ${pctClass(p)}"><i style="width:${p}%"></i></span>
     <span class="mpct ${pctClass(p)}">${Math.round(p)}%</span>
@@ -1038,7 +1039,7 @@ function renderC(m) {
       ? `in <b class="cd" data-at="${esc(m.hero.resetAt)}">—</b><span class="wclock">${rolling ? "rolling" : fmtClock(m.hero.resetAt)}</span>`
       : "rolling";
   }
-  if (m.others.length) bars += `<div class="band-minis">${m.others.map(miniC).join("")}</div>`;
+  if (m.others.length) bars += `<div class="band-minis">${m.others.map(e => miniC(e, e === m.hero)).join("")}</div>`;
   const meta = `${m.values.map(e => valueA(e, m.id)).join("")}${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}${sparkSVG(m.id)}`;
   return `<section class="band ${m.cls}${m.stateCls}" style="--accent:${m.meta.accent}" data-provider="${m.id}">
     ${head}<div class="band-hero">${hero}</div><div class="band-bars">${bars}</div>

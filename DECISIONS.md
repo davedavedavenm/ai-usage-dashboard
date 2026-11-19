@@ -652,6 +652,9 @@ Hydrogen, it shares the Gemini 5 h bucket and is hidden from the pinned
 - `antigravityHeroEntry()` now prefers `agy-g4neon` first, falling back to
   `agy-g4hydrogen` and then the tightest Gemini window; `agy-g4neon` is a
   5 h rolling bucket (excluded from rollover alerts, kept in threshold alerts).
+  `google-antigravity` keeps all models (including the hero `Gemini Neon`) in
+  its ordered mini model list so scanning the rows never looks like Neon is
+  missing.
 
 ## OpenCode Go API key is updatable from Web UI Settings and mirrored to `auth.json` by hash — Active (2026-11-18)
 
