@@ -648,6 +648,15 @@ function readAlertConfig() {
   };
 }
 
+function readBotState() {
+  try {
+    const parsed = JSON.parse(readFileSync(join(DATA_DIR, "bot-state.json"), "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function tightestEntry(providers) {
   const out = [];
   for (const [id, r] of Object.entries(providers)) {
@@ -715,6 +724,126 @@ function longestPeriodEntries(providers) {
   return out;
 }
 
+function isAntigravityShortBucket(id, entry) {
+  if (id !== "google-antigravity" || !entry) return false;
+  if (/claude|gpt|3p/i.test(`${entry.name || ""} ${entry.window || ""}`)) return false;
+  return windowDurationHours(entry) < 24;
+}
+
+function canonicalWindowId(id, entry) {
+  if (isAntigravityShortBucket(id, entry)) return "agy-gemini-5h";
+  return String(entry?.window || entry?.name || "unspecified");
+}
+
+function displayEntryName(id, entry) {
+  if (isAntigravityShortBucket(id, entry)) return "Gemini 5h";
+  return String(entry?.name || entry?.window || "");
+}
+
+function isLondonQuietHours(nowMs = Date.now()) {
+  try {
+    const hourStr = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London",
+      hour: "2-digit",
+      hour12: false,
+    }).format(new Date(nowMs));
+    const h = Number(hourStr) % 24;
+    return h >= 23 || h < 7;
+  } catch {
+    return false;
+  }
+}
+
+function parseTimestampMs(val) {
+  if (typeof val === "number" && Number.isFinite(val)) return val;
+  if (typeof val === "string" && val.trim()) {
+    const t = Date.parse(val.trim());
+    return Number.isFinite(t) ? t : 0;
+  }
+  return 0;
+}
+
+function formatLondonTime(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("en-GB", {
+      timeZone: "Europe/London",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return String(iso);
+  }
+}
+
+function bestHeadroomLines(providers, excludeId) {
+  const candidates = [];
+  for (const [id, r] of Object.entries(providers || {})) {
+    if (id === excludeId || !r || !Array.isArray(r.entries)) continue;
+    if (r.status && r.status !== "ok") continue;
+    if (r.entries.some(e => e && e.limited === true && (e.percentRemaining ?? 0) <= 0)) continue;
+    let pick = null;
+    for (const e of r.entries) {
+      if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      if (e.limited === true || e.percentRemaining <= 0) continue;
+      const dur = windowDurationHours(e);
+      if (!pick) {
+        pick = { e, dur };
+      } else {
+        const pickDurable = pick.dur >= 24;
+        const curDurable = dur >= 24;
+        if (curDurable && !pickDurable && e.percentRemaining >= 30) pick = { e, dur };
+        else if (curDurable === pickDurable && e.percentRemaining > pick.e.percentRemaining) pick = { e, dur };
+      }
+    }
+    if (pick) {
+      candidates.push({
+        label: PROVIDER_LABELS[id] || r.label || id,
+        name: displayEntryName(id, pick.e),
+        pct: Math.round(pick.e.percentRemaining),
+        durable: pick.dur >= 24,
+      });
+    }
+  }
+  candidates.sort((a, b) => (b.pct - a.pct) || (Number(b.durable) - Number(a.durable)));
+  if (!candidates.length) return "";
+  const top = candidates.slice(0, 2).map(c => `${esc(c.label)} · ${esc(c.name)} (<b>${c.pct}%</b>)`);
+  return `\n💡 Best headroom now: ${top.join(", ")}`;
+}
+
+function dashboardUrlButton() {
+  return /^https?:\/\//i.test(String(DASHBOARD_URL || ""))
+    ? { text: "🔗 Dashboard", url: DASHBOARD_URL }
+    : null;
+}
+
+function buildAlertKeyboard(id, winId, isShort, pct) {
+  const row1 = [{ text: "📊 Board", callback_data: "aiud:board" }];
+  if (pct <= 0) {
+    row1.push({ text: "🔔 Ping on reset", callback_data: `aiud:ping:${id}:${winId}`.slice(0, 64) });
+  }
+  const row2 = [];
+  if (isShort) {
+    row2.push({ text: "🔇 Mute 5h 24h", callback_data: "aiud:mute5h:24h" });
+  }
+  const urlBtn = dashboardUrlButton();
+  if (urlBtn) row2.push(urlBtn);
+  const rows = [row1];
+  if (row2.length) rows.push(row2);
+  return { inline_keyboard: rows };
+}
+
+function buildRolloverKeyboard() {
+  const row = [{ text: "📊 Board", callback_data: "aiud:board" }];
+  const urlBtn = dashboardUrlButton();
+  if (urlBtn) row.push(urlBtn);
+  return { inline_keyboard: [row] };
+}
+
 function buildStages(threshold) {
   const final = Math.max(5, Math.min(Number(threshold) || 15, 49));
   return [
@@ -728,44 +857,48 @@ function esc(s) {
 }
 
 function buildAlertText(stage, info) {
-  const { label, entry, pct } = info;
+  const { label, entry, pct, id, providers } = info;
+  const entryName = displayEntryName(id, entry);
   const out = pct <= 0;
   const emoji = out ? "🚨" : stage.emoji;
   const headline = out ? "is out of allowance" : stage.headline;
   const pctText = out ? "Nothing left" : `<b>${pct}%</b> left`;
-  const resetText = entry.resetAt
-    ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
-    : "";
-  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}\n${esc(DASHBOARD_URL)}`;
+  const resetText = entry.resetAt ? "\nResets " + esc(formatLondonTime(entry.resetAt)) : "";
+  const headroom = out && providers ? bestHeadroomLines(providers, id) : "";
+  return `<b>${emoji} ${esc(label)} · ${esc(entryName)} — ${headline}</b>\n${pctText}${resetText}${headroom}`;
 }
 
 function buildRolloverAlertText(stageHours, info) {
-  const { label, entry, pct, blocked } = info;
-  const emoji = stageHours <= 12 ? "⚠️" : "⏳";
+  const { label, entry, pct, blocked, id } = info;
+  const entryName = displayEntryName(id, entry);
+  const emoji = "⏳";
   const headline = `resets in ~${stageHours} hours`;
   const pctText = `<b>${pct}%</b> allowance remaining before reset`;
-  const resetText = entry.resetAt
-    ? "\nResets " + new Date(entry.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
-    : "";
+  const resetText = entry.resetAt ? "\nResets " + esc(formatLondonTime(entry.resetAt)) : "";
   const blockedText = (blocked || []).length
     ? "\n" + blocked.map(b => {
-        const when = b.resetAt
-          ? new Date(b.resetAt).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
-          : "";
-        return `⚠️ ${esc(b.name)} cap reached${when ? " until " + when : ""}`;
+        const when = b.resetAt ? formatLondonTime(b.resetAt) : "";
+        return `⚠️ ${esc(b.name)} cap reached${when ? " until " + esc(when) : ""}`;
       }).join("\n")
     : "";
-  return `<b>${emoji} ${esc(label)} · ${esc(entry.name)} — ${headline}</b>\n${pctText}${resetText}${blockedText}\n${esc(DASHBOARD_URL)}`;
+  return `<b>${emoji} ${esc(label)} · ${esc(entryName)} — ${headline}</b>\n${pctText}${resetText}${blockedText}`;
 }
 
-async function sendTelegram(cfg, text) {
+async function sendTelegram(cfg, text, replyMarkup = null) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  const payload = {
+    chat_id: cfg.chatId,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
   try {
     const res = await fetch(`${TG_API}/bot${cfg.token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: cfg.chatId, text, parse_mode: "HTML" }),
+      body: JSON.stringify(payload),
       signal: ctrl.signal,
     });
     const body = await res.json().catch(() => null);
@@ -796,26 +929,30 @@ async function sendWebhook(url, payload) {
   }
 }
 
-async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
+async function runRolloverAlerts(providers, state, cfg, now = Date.now(), botState = {}) {
   if (!cfg.enabled || (!cfg.token && !cfg.webhookUrl) || cfg.rolloverEnabled === false) return;
+  const quietUntil = parseTimestampMs(botState?.quietUntil);
+  if (quietUntil > now || isLondonQuietHours(now)) return;
   const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
   const winKeyOf = (e) => `${e.window || ""}|${e.resetAt || ""}`;
 
   for (const { id, label, entry, blocked } of longestPeriodEntries(providers)) {
     const pct = entry.percentRemaining;
-    if (pct <= 0) continue;
+    if (pct < 15) continue;
 
     const resetMs = new Date(norm(entry.resetAt)).getTime();
     if (!Number.isFinite(resetMs) || isNaN(resetMs)) continue;
-    const hoursUntilReset = (resetMs - now) / (3600 * 1000);
-
-    let stage = null;
-    if (hoursUntilReset <= 12 && hoursUntilReset > 0) {
-      stage = 12;
-    } else if (hoursUntilReset <= 24 && hoursUntilReset > 12) {
-      stage = 24;
+    // If an outer blocked cap resets at or after this window, the allowance is unspendable.
+    if ((blocked || []).some(b => {
+      const bMs = b?.resetAt ? new Date(norm(b.resetAt)).getTime() : NaN;
+      return Number.isFinite(bMs) && bMs >= resetMs;
+    })) {
+      continue;
     }
-    if (!stage) continue;
+
+    const hoursUntilReset = (resetMs - now) / (3600 * 1000);
+    if (!(hoursUntilReset > 0 && hoursUntilReset <= 24)) continue;
+    const stage = 24;
 
     const winKey = winKeyOf(entry);
     const prev = state.rolloverAlerts?.[id];
@@ -830,12 +967,7 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
       }
     }
 
-    const delivered = channel => {
-      if (stage === 24) {
-        return Boolean(sent[24]?.[channel] || sent[12]?.[channel]);
-      }
-      return Boolean(sent[12]?.[channel]);
-    };
+    const delivered = channel => Boolean(sent[24]?.[channel] || sent[12]?.[channel]);
 
     const saveReceipt = channel => {
       const current = sent[stage];
@@ -846,7 +978,11 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
     };
 
     if (cfg.token && cfg.chatId && !delivered("telegram")) {
-      const result = await sendTelegram(cfg, buildRolloverAlertText(stage, { label, entry, pct, blocked }));
+      const result = await sendTelegram(
+        cfg,
+        buildRolloverAlertText(stage, { id, label, entry, pct, blocked }),
+        buildRolloverKeyboard()
+      );
       if (result.ok) saveReceipt("telegram");
       else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", alertType: "rollover", status: result.status }));
     }
@@ -867,24 +1003,137 @@ async function runRolloverAlerts(providers, state, cfg, now = Date.now()) {
   }
 }
 
-async function runAlerts(providers, state, cfg, now = Date.now()) {
+async function runResetNotifications(providers, state, cfg, now = Date.now(), botState = {}) {
+  const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
+  const exhausted = (state.exhausted && typeof state.exhausted === "object") ? state.exhausted : {};
+  const pingMap = (botState?.pingOnReset && typeof botState.pingOnReset === "object") ? botState.pingOnReset : {};
+  const quietUntil = parseTimestampMs(botState?.quietUntil);
+
+  for (const [id, r] of Object.entries(providers || {})) {
+    if (!r || !Array.isArray(r.entries)) continue;
+    const label = PROVIDER_LABELS[id] || r.label || id;
+    const seenWinIds = new Set();
+    for (const e of r.entries) {
+      if (!e || e.renderType !== "percent" || typeof e.percentRemaining !== "number") continue;
+      if (id === "google-antigravity" && /claude|gpt|3p/i.test(`${e.name || ""} ${e.window || ""}`)) continue;
+      const winId = canonicalWindowId(id, e);
+      if (seenWinIds.has(winId)) continue;
+      seenWinIds.add(winId);
+      const winKey = `${winId}|${e.resetAt || ""}`;
+      if (e.percentRemaining <= 0) {
+        if (exhausted[id]?.[winId] !== winKey) {
+          state.exhausted = state.exhausted || {};
+          state.exhausted[id] = state.exhausted[id] || {};
+          state.exhausted[id][winId] = winKey;
+          writeState(state);
+        }
+        continue;
+      }
+      const prevExhausted = exhausted[id]?.[winId];
+      if (!prevExhausted) continue;
+      const prevReset = prevExhausted.split("|")[1] || "";
+      const prevResetMs = prevReset ? new Date(norm(prevReset)).getTime() : NaN;
+      const curResetMs = e.resetAt ? new Date(norm(e.resetAt)).getTime() : NaN;
+      const hasNewReset = Boolean(e.resetAt) && (
+        !Number.isFinite(prevResetMs) ||
+        (Number.isFinite(curResetMs) && Math.abs(curResetMs - prevResetMs) >= 2 * 3600 * 1000)
+      );
+      if (!hasNewReset) continue;
+
+      const isDurable = windowDurationHours(e) >= 24;
+      const pingKey = `${id}:${winId}`;
+      const pingRequested = Boolean(pingMap[pingKey] || pingMap[id]);
+      if (!isDurable && !pingRequested) {
+        delete state.exhausted[id][winId];
+        writeState(state);
+        continue;
+      }
+      if (state.resetNotified?.[id]?.[winId] === winKey) {
+        delete state.exhausted[id][winId];
+        writeState(state);
+        continue;
+      }
+      if (!pingRequested && (quietUntil > now || isLondonQuietHours(now))) {
+        continue;
+      }
+      if (cfg.token && cfg.chatId) {
+        const entryName = displayEntryName(id, e);
+        const pctInt = Math.round(e.percentRemaining);
+        const resetLine = e.resetAt ? `\nNext reset ${esc(formatLondonTime(e.resetAt))}` : "";
+        const text = `<b>✅ ${esc(label)} · ${esc(entryName)} — back online</b>\n<b>${pctInt}%</b> available${resetLine}`;
+        const result = await sendTelegram(cfg, text, buildRolloverKeyboard());
+        if (result.ok) {
+          state.resetNotified = state.resetNotified || {};
+          state.resetNotified[id] = state.resetNotified[id] || {};
+          state.resetNotified[id][winId] = winKey;
+          delete state.exhausted[id][winId];
+          writeState(state);
+        } else {
+          console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", alertType: "reset", status: result.status }));
+        }
+      }
+    }
+  }
+}
+
+async function runAuthAlerts(providers, state, cfg, now = Date.now()) {
+  const authRe = /\b(auth(?:entication)?|cookie|401|403|unauthorized|forbidden|expired|login|re-?login|reauth|token\s+invalid)\b/i;
+  for (const [id, r] of Object.entries(providers || {})) {
+    if (!r) continue;
+    const isErr = r.status === "error";
+    const errMsg = String(r.error || "");
+    if (!isErr) {
+      if (state.authAlerts?.[id]) {
+        delete state.authAlerts[id];
+        writeState(state);
+      }
+      continue;
+    }
+    if (!authRe.test(errMsg) || /429/.test(errMsg)) continue;
+    if (state.authAlerts?.[id]?.sentAt) continue;
+    const label = PROVIDER_LABELS[id] || r.label || id;
+    if (cfg.token && cfg.chatId) {
+      const text = `<b>🔑 ${esc(label)} — authentication expired</b>\n<code>${esc(errMsg.slice(0, 180))}</code>\nRefresh session credentials to resume collection.`;
+      const result = await sendTelegram(cfg, text, buildRolloverKeyboard());
+      if (result.ok) {
+        state.authAlerts = state.authAlerts || {};
+        state.authAlerts[id] = { sentAt: new Date(now).toISOString(), error: errMsg.slice(0, 120) };
+        writeState(state);
+      } else {
+        console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", alertType: "auth", status: result.status }));
+      }
+    }
+  }
+}
+
+async function runAlerts(providers, state, cfg, now = Date.now(), botState = {}) {
   if (!cfg.enabled || (!cfg.token && !cfg.webhookUrl)) {
     console.log(JSON.stringify({ at: new Date().toISOString(), alerts: "disabled" }));
     return;
   }
   const stages = buildStages(cfg.threshold);
   const norm = (s) => (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
-  const winKeyOf = (e) => `${e.window || ""}|${e.resetAt || ""}`;
+  const mute5hUntil = parseTimestampMs(botState?.mute5hUntil);
+  const quietUntil = parseTimestampMs(botState?.quietUntil);
+
   for (const { id, label, entry } of tightestEntry(providers)) {
     const pct = entry.percentRemaining;
+    const isShort = windowDurationHours(entry) < 24;
+    if (isShort && mute5hUntil > now) continue;
+    if (quietUntil > now && pct > 0) continue;
     const stage = [...stages].reverse().find(s => pct <= s.pct);
     if (!stage) continue;
-    const winKey = winKeyOf(entry);
+    if (isShort && stage.pct > 0) continue;
+
+    const windowId = canonicalWindowId(id, entry);
+    const winKey = `${windowId}|${entry.resetAt || ""}`;
     state.alerts = state.alerts || {};
-    const windowId = entry.window || entry.name || "unspecified";
     const legacy = state.alerts[id];
     if (legacy?.winKey) {
-      const legacyWindowId = legacy.winKey.split("|")[0] || windowId;
+      const rawLegacyWinId = legacy.winKey.split("|")[0] || windowId;
+      const legacyWindowId = id === "google-antigravity" && /^agy-(g3flash|g3pro|g3image|g4neon|g4hydrogen)$/i.test(rawLegacyWinId)
+        ? "agy-gemini-5h"
+        : rawLegacyWinId;
       state.alertWindows = state.alertWindows || {};
       state.alertWindows[id] = state.alertWindows[id] || {};
       if (!state.alertWindows[id][legacyWindowId]) {
@@ -901,7 +1150,7 @@ async function runAlerts(providers, state, cfg, now = Date.now()) {
       const ck = winKey.split("|");
       const sameReset = (!pk[1] && !ck[1]) || (pk[1] && ck[1] &&
         Math.abs(new Date(norm(pk[1])).getTime() - new Date(norm(ck[1])).getTime()) < 2 * 3600 * 1000);
-      if (pk[0] === ck[0] && sameReset) {
+      if ((pk[0] === ck[0] || isAntigravityShortBucket(id, entry)) && sameReset) {
         sent = (prev.stages && typeof prev.stages === "object") ? prev.stages : {};
         if (!prev.stages && pct <= ALERT_THRESHOLD_DEFAULT) sent[stage.pct] = true;
       }
@@ -920,7 +1169,11 @@ async function runAlerts(providers, state, cfg, now = Date.now()) {
       writeState(state);
     };
     if (cfg.token && cfg.chatId && !delivered("telegram")) {
-      const result = await sendTelegram(cfg, buildAlertText(stage, { label, entry, pct }));
+      const result = await sendTelegram(
+        cfg,
+        buildAlertText(stage, { id, label, entry, pct, providers }),
+        buildAlertKeyboard(id, windowId, isShort, pct)
+      );
       if (result.ok) saveReceipt("telegram");
       else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "telegram", status: result.status }));
     }
@@ -929,7 +1182,7 @@ async function runAlerts(providers, state, cfg, now = Date.now()) {
         event: "allowance_alert",
         provider: id,
         label,
-        entry: { name: entry.name, window: entry.window, percentRemaining: pct, resetAt: entry.resetAt },
+        entry: { name: displayEntryName(id, entry), window: windowId, percentRemaining: pct, resetAt: entry.resetAt },
         stage: stage.pct,
         threshold: cfg.threshold,
         dashboardUrl: DASHBOARD_URL,
@@ -939,7 +1192,9 @@ async function runAlerts(providers, state, cfg, now = Date.now()) {
       else console.log(JSON.stringify({ alerts: "delivery-failed", provider: id, channel: "webhook", status: result.status }));
     }
   }
-  await runRolloverAlerts(providers, state, cfg, now);
+  await runResetNotifications(providers, state, cfg, now, botState);
+  await runAuthAlerts(providers, state, cfg, now);
+  await runRolloverAlerts(providers, state, cfg, now, botState);
 }
 
 async function main() {
@@ -1131,7 +1386,7 @@ async function main() {
     collector: COLLECTOR_NAME,
     providers,
   };
-  await runAlerts(providers, state, readAlertConfig());
+  await runAlerts(providers, state, readAlertConfig(), Date.now(), readBotState());
   const key = readIngestKey();
   const res = await fetch(INGEST_URL, {
     method: "POST",

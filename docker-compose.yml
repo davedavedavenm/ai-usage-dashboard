@@ -64,6 +64,31 @@ services:
       - ${CREDENTIALS_ROOT}/.local/share/opencode:/creds/.local/share/opencode
       - /etc/localtime:/etc/localtime:ro
 
+  # Interactive Telegram bot sidecar: serves /status PNG board, /best, /resets,
+  # /refresh, /mute5h, /quiet and inline callbacks while collector stays stateless.
+  aiud-bot:
+    build: ./bot
+    image: ai-usage-bot:latest
+    container_name: aiud-bot
+    labels:
+      - "com.getarcaneapp.arcane.updater=false"
+    user: "${PUID:-1000}:${PGID:-1000}"
+    restart: unless-stopped
+    depends_on:
+      - ai-usage-dashboard
+    environment:
+      - TZ=${TZ:-Europe/London}
+      - AIUD_DATA_DIR=/data
+      - AIUD_DASHBOARD_URL=${AIUD_DASHBOARD_URL:-https://balances.magnusfamily.co.uk/}
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/aiud-bot.alive')<120\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # Logged-in Chromium holding the Alibaba Bailian session (Qwen percentages).
   # The desktop UI is password-protected (QWEN_UI_USER/QWEN_UI_PASSWORD from
   # stack .env) and published on the LAN + tailnet; CDP stays loopback-only

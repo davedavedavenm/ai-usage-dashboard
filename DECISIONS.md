@@ -1013,6 +1013,26 @@ reliable) and keeps the Cascadia/JetBrains names behind it as progressive
 enhancement. Lesson: a single broken named font at the head of the stack
 blanks the whole dashboard body with zero console errors.
 
+## Telegram alert hygiene and `aiud-bot` sidecar — Active (2026-11-22)
+
+Upgraded `AI Usage Manager` (`@ai_usage_allowance_bot`) from plain-text
+collector alerts to quiet, actionable quota guidance backed by an interactive
+`aiud-bot` sidecar:
+
+- **Alert hygiene & guidance (`collector/collect.mjs`)**: reads shared
+  `/data/bot-state.json` (`mute5hUntil` suppresses short 5h exhaustion alerts;
+  `quietUntil` mutes rollover alerts); appends "Best headroom now" + inline
+  keyboard (`aiud:board`, ping-on-reset, mute/dashboard buttons) on durable
+  exhaustion alerts; deduplicates provider authentication-expiry alerts
+  (`401`/`403` / cookie expired); emits one-shot "back online" recovery notices
+  when durable windows reset; and formats alerts in escaped HTML with
+  `disable_web_page_preview: true`.
+- **`aiud-bot` sidecar (`bot/`)**: long-polling Python bot + PNG visual quota
+  board renderer (`board_render.py`, `86,143` bytes live) serving `/status`,
+  `/best`, `/resets`, `/refresh`, `/mute5h`, `/quiet`, `/help`, and inline
+  callbacks sharing `/data/bot-state.json` (`node --test` `23/23` local &
+  `22/22` container, `pytest` `3/3`).
+
 ---
 
 Related: `README.md` (architecture, API, login flows) · infra repo

@@ -92,7 +92,7 @@ test('alternating tightest windows retains each receipt history across restart',
   const data = provider(14);
   data.fixture.entries.push({ ...data.fixture.entries[0], name: 'Short', window: 'short', percentRemaining: 90 });
   await h.context.runAlerts(data, state, cfg);
-  data.fixture.entries[1].percentRemaining = 10;
+  data.fixture.entries[1].percentRemaining = 0;
   await h.context.runAlerts(data, state, cfg);
   const restarted = harness();
   data.fixture.entries[1].percentRemaining = 100;
@@ -105,7 +105,7 @@ test('legacy window is migrated before another window replaces the old record', 
   const h = harness(), cfg = { ...config, webhookUrl: '' };
   const state = { alerts: { fixture: { winKey: 'weekly|2026-09-14T06:34:00Z', stages: { 15: '2026-09-07T10:00:00Z' } } } };
   const data = provider(14);
-  data.fixture.entries.push({ ...data.fixture.entries[0], name: 'Short', window: 'short', percentRemaining: 10 });
+  data.fixture.entries.push({ ...data.fixture.entries[0], name: 'Short', window: 'short', percentRemaining: 0 });
   await h.context.runAlerts(data, state, cfg);
   const restarted = harness();
   data.fixture.entries[1].percentRemaining = 100;
@@ -214,7 +214,7 @@ test('rollover alerts: Antigravity uses Gemini weekly/Argon and ignores 5h Claud
       entries: [
         { name: 'Gemini Flash', window: 'agy-g3flash', resetAt: '2026-11-15T19:09:05Z', renderType: 'percent', percentRemaining: 23 },
         { name: 'Claude', window: 'agy-claude', resetAt: '2026-11-13T21:40:09Z', renderType: 'percent', percentRemaining: 100 },
-        { name: 'G4Argon', window: 'agy-g4argon', resetAt: '2026-11-15T18:57:30Z', renderType: 'percent', percentRemaining: 13 },
+        { name: 'G4Argon', window: 'agy-g4argon', resetAt: '2026-11-15T18:57:30Z', renderType: 'percent', percentRemaining: 18 },
         { name: 'Gemini weekly', window: 'agy-gemini-weekly', resetAt: '2026-11-15T19:09:05Z', renderType: 'percent', percentRemaining: 23 },
         { name: 'Claude/GPT weekly', window: 'agy-3p-weekly', resetAt: '2026-11-20T16:40:10Z', renderType: 'percent', percentRemaining: 100 },
       ],
@@ -242,7 +242,7 @@ test('rollover alerts: Antigravity uses Gemini weekly/Argon and ignores 5h Claud
   await h.context.runRolloverAlerts(data, state, cfg, tNear);
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /Gemini · Antigravity · G4Argon/);
-  assert.match(h.calls[0].body.text, /13%<\/b> allowance remaining before reset/);
+  assert.match(h.calls[0].body.text, /18%<\/b> allowance remaining before reset/);
 });
 
 test('rollover alerts: GPT-OSS is not a durable Antigravity window', async () => {
@@ -263,7 +263,7 @@ test('rollover alerts: GPT-OSS is not a durable Antigravity window', async () =>
   assert.equal(h.calls.length, 0);
 });
 
-test('rollover alerts: OpenCode Go weekly warning names the limited monthly cap', async () => {
+test('rollover alerts: OpenCode Go weekly warning names earlier limited cap and suppresses when blocked past reset', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
@@ -272,7 +272,7 @@ test('rollover alerts: OpenCode Go weekly warning names the limited monthly cap'
       label: 'OpenCode Go',
       entries: [
         { name: 'Last 5 hours', window: 'rolling', resetAt: '2026-09-20T12:00:00Z', renderType: 'percent', percentRemaining: 100 },
-        { name: 'This week', window: 'weekly', resetAt: '2026-09-21T06:00:00Z', renderType: 'percent', percentRemaining: 10 },
+        { name: 'This week', window: 'weekly', resetAt: '2026-09-21T06:00:00Z', renderType: 'percent', percentRemaining: 20 },
         { name: 'This month (limited)', window: 'monthly', resetAt: '2026-09-20T18:00:00Z', renderType: 'percent', percentRemaining: 0, limited: true },
       ],
     },
@@ -281,68 +281,62 @@ test('rollover alerts: OpenCode Go weekly warning names the limited monthly cap'
   await h.context.runRolloverAlerts(data, state, cfg, t20);
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /OpenCode Go · This week/);
-  assert.match(h.calls[0].body.text, /10%<\/b> allowance remaining before reset/);
+  assert.match(h.calls[0].body.text, /20%<\/b> allowance remaining before reset/);
   assert.match(h.calls[0].body.text, /This month cap reached until/);
+
+  // Blocked cap resetting AFTER weekly reset suppresses unspendable rollover alert.
+  const hBlocked = harness();
+  const blockedPast = structuredClone(data);
+  blockedPast['opencode-go'].entries[2].resetAt = '2026-09-22T10:00:00Z';
+  await hBlocked.context.runRolloverAlerts(blockedPast, {}, cfg, t20);
+  assert.equal(hBlocked.calls.length, 0);
 });
 
-test('rollover alerts: 24h and 12h warnings fire before reset when allowance remains', async () => {
+test('rollover alerts: single 24h warning fires in daytime and defers during London quiet hours', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
-  const resetAt = '2026-09-20T12:00:00Z';
+  const resetAt = '2026-09-20T20:00:00Z';
   const data = { fixture: { label: 'Claude', entries: [{ name: 'Weekly', window: 'weekly', resetAt, renderType: 'percent', percentRemaining: 66 }] } };
 
   // 26 hours before reset -> no rollover alert
-  const t26 = new Date('2026-09-19T10:00:00Z').getTime();
+  const t26 = new Date('2026-09-19T18:00:00Z').getTime();
   await h.context.runRolloverAlerts(data, state, cfg, t26);
   assert.equal(h.calls.length, 0);
 
-  // 23 hours before reset -> 24h rollover warning fires
-  const t23 = new Date('2026-09-19T13:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t23);
+  // Quiet hours (23:30 London = 22:30 UTC in BST, 21.5h before reset) -> deferred
+  const tQuiet = new Date('2026-09-19T22:30:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, tQuiet);
+  assert.equal(h.calls.length, 0);
+
+  // Morning (07:30 London = 06:30 UTC in BST, 13.5h before reset) -> single 24h warning fires
+  const tMorning = new Date('2026-09-20T06:30:00Z').getTime();
+  await h.context.runRolloverAlerts(data, state, cfg, tMorning);
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].body.text, /resets in ~24 hours/);
   assert.match(h.calls[0].body.text, /66%<\/b> allowance remaining/);
-  assert.match(h.calls[0].body.text, /before reset/);
-  assert.doesNotMatch(h.calls[0].body.text, /rollover/);
+  assert.equal(h.calls[0].body.disable_web_page_preview, true);
+  assert.ok(h.calls[0].body.reply_markup?.inline_keyboard?.length >= 1);
 
-  // Subsequent collection within 24h window -> deduped, no repeat
-  const t22 = new Date('2026-09-19T14:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t22);
+  // Subsequent checks in same reset window (including < 12h) stay silent
+  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T11:00:00Z').getTime());
   assert.equal(h.calls.length, 1);
 
-  // 10 hours before reset -> 12h rollover warning fires
-  const t10 = new Date('2026-09-20T02:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t10);
-  assert.equal(h.calls.length, 2);
-  assert.match(h.calls[1].body.text, /resets in ~12 hours/);
-
-  // Subsequent collection within 12h window -> deduped, no repeat
-  const t8 = new Date('2026-09-20T04:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t8);
-  assert.equal(h.calls.length, 2);
-
   // Past reset -> no alert
-  const tPast = new Date('2026-09-20T13:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, tPast);
-  assert.equal(h.calls.length, 2);
+  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T21:00:00Z').getTime());
+  assert.equal(h.calls.length, 1);
 });
 
-test('rollover alerts: 0% allowance remaining suppresses warning (nothing to lose)', async () => {
+test('rollover alerts: below 15% remaining suppresses rollover warning', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
-  const resetAt = '2026-09-20T12:00:00Z';
-  const data = { fixture: { label: 'Claude', entries: [{ name: 'Weekly', window: 'weekly', resetAt, renderType: 'percent', percentRemaining: 0 }] } };
-
-  // 23 hours before reset with 0% remaining
-  const t23 = new Date('2026-09-19T13:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t23);
-  assert.equal(h.calls.length, 0);
-
-  // 10 hours before reset with 0% remaining
-  const t10 = new Date('2026-09-20T02:00:00Z').getTime();
-  await h.context.runRolloverAlerts(data, state, cfg, t10);
+  const resetAt = '2026-09-20T18:00:00Z';
+  const tDay = new Date('2026-09-20T10:00:00Z').getTime();
+  for (const pct of [0, 10, 14]) {
+    const data = { fixture: { label: 'Claude', entries: [{ name: 'Weekly', window: 'weekly', resetAt, renderType: 'percent', percentRemaining: pct }] } };
+    await h.context.runRolloverAlerts(data, state, cfg, tDay);
+  }
   assert.equal(h.calls.length, 0);
 });
 
@@ -367,7 +361,7 @@ test('rollover alerts: short rolling windows (< 24h duration) never trigger roll
   await h.context.runRolloverAlerts(data, state, cfg, t3);
   assert.equal(h.calls.length, 0);
 
-  // Still participates normally in threshold alerts when low
+  // Short rolling windows alert only at 0% (never 15% warning) and Antigravity 5h shares agy-gemini-5h
   const lowData = {
     'google-antigravity': {
       label: 'google-antigravity',
@@ -377,9 +371,20 @@ test('rollover alerts: short rolling windows (< 24h duration) never trigger roll
       ],
     },
   };
-  await h.context.runAlerts(lowData, {}, { ...config, webhookUrl: '' }, t3);
+  const st = {};
+  await h.context.runAlerts(lowData, st, { ...config, webhookUrl: '' }, t3);
+  assert.equal(h.calls.length, 0);
+
+  // Swap tightest across Antigravity 5h siblings at 0% -> still fires only ONCE under shared bucket
+  lowData['google-antigravity'].entries[0].percentRemaining = 0;
+  await h.context.runAlerts(lowData, st, { ...config, webhookUrl: '' }, t3);
   assert.equal(h.calls.length, 1);
-  assert.match(h.calls[0].body.text, /Gemini Neon — nearly out/);
+  assert.match(h.calls[0].body.text, /Gemini 5h — is out of allowance/);
+  lowData['google-antigravity'].entries = [
+    { name: 'Gemini Flash', window: 'agy-g3flash', resetAt, renderType: 'percent', percentRemaining: 0 },
+  ];
+  await h.context.runAlerts(lowData, st, { ...config, webhookUrl: '' }, t3);
+  assert.equal(h.calls.length, 1);
 });
 
 test('rollover alerts: new reset period clears dedupe and allows new cycle of warnings', async () => {
@@ -402,21 +407,75 @@ test('rollover alerts: new reset period clears dedupe and allows new cycle of wa
   assert.equal(h.calls.length, 2);
 });
 
-test('rollover alerts: 12h delivery suppresses 24h warning if 24h was missed', async () => {
+test('rollover alerts: missed early hours still fires 24h warning once during daytime', async () => {
   const h = harness();
   const state = {};
   const cfg = { ...config, webhookUrl: '' };
-  const resetAt = '2026-09-20T12:00:00Z';
+  const resetAt = '2026-09-20T18:00:00Z';
   const data = { fixture: { label: 'Claude', entries: [{ name: 'Weekly', window: 'weekly', resetAt, renderType: 'percent', percentRemaining: 40 }] } };
 
-  // First check happens directly at 10 hours before reset (24h check missed)
-  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T02:00:00Z').getTime());
+  // First check happens directly 8 hours before reset during daytime
+  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T10:00:00Z').getTime());
   assert.equal(h.calls.length, 1);
-  assert.match(h.calls[0].body.text, /resets in ~12 hours/);
+  assert.match(h.calls[0].body.text, /resets in ~24 hours/);
 
-  // Subsequent check still in 12h window -> stays silent
-  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T03:00:00Z').getTime());
+  // Subsequent check still before reset -> stays silent
+  await h.context.runRolloverAlerts(data, state, cfg, new Date('2026-09-20T11:00:00Z').getTime());
   assert.equal(h.calls.length, 1);
+});
+
+test('mute5hUntil suppresses short windows; best headroom, back-online reset, and auth dedup work', async () => {
+  const h = harness();
+  const state = {};
+  const cfg = { ...config, webhookUrl: '' };
+  const tDay = new Date('2026-09-20T10:00:00Z').getTime();
+
+  // Muted 5h suppresses 0% on short window
+  const shortOut = {
+    anthropic: {
+      status: 'ok',
+      label: 'Claude',
+      entries: [{ name: '5h', window: '5h', resetAt: '2026-09-20T14:00:00Z', renderType: 'percent', percentRemaining: 0 }],
+    },
+    openai: {
+      status: 'ok',
+      label: 'ChatGPT',
+      entries: [{ name: 'Weekly', window: 'weekly', resetAt: '2026-09-26T10:00:00Z', renderType: 'percent', percentRemaining: 95 }],
+    },
+  };
+  await h.context.runAlerts(shortOut, state, cfg, tDay, { mute5hUntil: tDay + 3600_000 });
+  assert.equal(h.calls.length, 0);
+
+  // Unmuted durable exhaustion includes Best headroom now + inline keyboard
+  const durableOut = {
+    anthropic: {
+      status: 'ok',
+      label: 'Claude',
+      entries: [{ name: 'Weekly', window: 'weekly', resetAt: '2026-09-21T10:00:00Z', renderType: 'percent', percentRemaining: 0 }],
+    },
+    openai: shortOut.openai,
+    'alibaba-coding-plan': { status: 'error', error: 'HTTP 401 cookie expired' },
+  };
+  await h.context.runAlerts(durableOut, state, cfg, tDay, {});
+  assert.equal(h.calls.length, 2); // exhaustion + 1x auth alert
+  assert.match(h.calls[0].body.text, /Best headroom now:.*ChatGPT/);
+  assert.ok(h.calls[0].body.reply_markup.inline_keyboard.flat().some(b => b.callback_data === 'aiud:board'));
+  assert.match(h.calls[1].body.text, /authentication expired/i);
+
+  // Auth error repeats stay silent
+  await h.context.runAlerts(durableOut, state, cfg, tDay + 600_000, {});
+  assert.equal(h.calls.length, 2);
+
+  // Durable weekly window resets to 100% -> back-online fires once
+  durableOut.anthropic.entries[0] = { name: 'Weekly', window: 'weekly', resetAt: '2026-09-28T10:00:00Z', renderType: 'percent', percentRemaining: 100 };
+  durableOut['alibaba-coding-plan'] = { status: 'ok', entries: [] };
+  await h.context.runAlerts(durableOut, state, cfg, tDay + 24 * 3600_000, {});
+  assert.equal(h.calls.length, 3);
+  assert.match(h.calls[2].body.text, /back online/);
+
+  // Re-poll after reset does not duplicate back-online
+  await h.context.runAlerts(durableOut, state, cfg, tDay + 25 * 3600_000, {});
+  assert.equal(h.calls.length, 3);
 });
 
 test('rollover alerts: partial destination delivery survives restart', async () => {
