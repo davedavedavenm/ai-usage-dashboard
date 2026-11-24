@@ -154,7 +154,17 @@ def _collapse_provider_rows(pid: str, r: dict[str, Any], now_ms: float) -> dict[
         if rt == "percent" and isinstance(e.get("percentRemaining"), (int, float)):
             win = str(e.get("window") or "")
             name = str(e.get("name") or win)
-            if pid == "google-antigravity" and win in {"agy-g3flash", "agy-g3pro", "agy-g3image", "agy-g4neon", "agy-g4hydrogen"}:
+            # Every Antigravity row on the shared Gemini 5h bucket collapses
+            # into one bar. Argon joined that bucket on 2026-11-24 (window
+            # agy-g4argon-5h); only the old weekly agy-g4argon was separate.
+            if pid == "google-antigravity" and win in {
+                "agy-g3flash",
+                "agy-g3pro",
+                "agy-g3image",
+                "agy-g4neon",
+                "agy-g4hydrogen",
+                "agy-g4argon-5h",
+            }:
                 if seen_5h_agy:
                     continue
                 seen_5h_agy = True

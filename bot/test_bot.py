@@ -72,6 +72,40 @@ def test_compute_best_headroom_excludes_monthly_limited_opencode_go():
     assert "opencode-go" not in ids
 
 
+def test_argon_catalogue_window_is_shared_5h_not_durable():
+    # Since 2026-11-24 Argon sits on the shared Gemini 5h bucket
+    # (window agy-g4argon-5h). Its id contains "argon", which must not earn
+    # it the durable-weekly headroom boost, and it must not get a second bar
+    # beside the collapsed "Gemini 5h (shared)" row.
+    agy = {
+        "status": "ok",
+        "label": "google-antigravity",
+        "entries": [
+            {"name": "Gemini Neon", "window": "agy-g4neon", "renderType": "percent", "percentRemaining": 50, "resetAt": "2026-11-24T21:00:58Z"},
+            {"name": "G4Argon", "window": "agy-g4argon-5h", "renderType": "percent", "percentRemaining": 40, "resetAt": "2026-11-24T21:00:58Z"},
+            {"name": "Gemini weekly", "window": "agy-gemini-weekly", "renderType": "percent", "percentRemaining": 30, "resetAt": "2026-12-01T08:00:58Z"},
+        ],
+    }
+    picks = board_render.compute_best_headroom({"google-antigravity": agy})
+    assert [p["window"] for p in picks] == ["Gemini weekly"]
+
+    names = [row["name"] for row in board_render._collapse_provider_rows("google-antigravity", agy, 1795335012000)["rows"]]
+    assert names == ["Gemini 5h (shared)", "Gemini weekly"]
+
+    # The old summary-sourced weekly Argon window stays durable: 40% weekly
+    # still outranks a fuller 5h row.
+    weekly_argon = {
+        "status": "ok",
+        "label": "google-antigravity",
+        "entries": [
+            {"name": "Gemini Neon", "window": "agy-g4neon", "renderType": "percent", "percentRemaining": 50, "resetAt": "2026-11-24T21:00:58Z"},
+            {"name": "G4Argon", "window": "agy-g4argon", "renderType": "percent", "percentRemaining": 40, "resetAt": "2026-11-26T07:21:22Z"},
+        ],
+    }
+    picks = board_render.compute_best_headroom({"google-antigravity": weekly_argon})
+    assert [p["window"] for p in picks] == ["G4Argon"]
+
+
 def test_bot_commands_and_callbacks_and_auth_guard(tmp_path: Path):
     (tmp_path / "latest.json").write_text(json.dumps(SAMPLE_LATEST), encoding="utf-8")
     sent_posts: list[tuple[str, dict]] = []
