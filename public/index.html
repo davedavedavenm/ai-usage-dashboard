@@ -816,9 +816,10 @@ function windowTag(w, name) {
   // it does not collapse into the generic "Last 5 hours" tag with the other
   // shared-bucket rows.
   if (/^agy-g4argon-5h$/i.test(w || "")) tag = (name || "G4Argon");
-  // The plan-level weekly rows would both collapse to "This week"; keep the
-  // family name so Gemini weekly and Claude/GPT weekly stay distinguishable.
-  else if (/^agy-(?:gemini|3p)-weekly$/i.test(w || "")) tag = (name || "This week");
+  // The plan-level summary rows would all collapse to a generic tag; keep the
+  // family name so Gemini weekly, Claude/GPT weekly and Claude/GPT 5h stay
+  // distinguishable.
+  else if (/^agy-(?:(?:gemini|3p)-weekly|3p-5h)$/i.test(w || "")) tag = (name || "This week");
   else if (/5h|fivehour|rolling/i.test(w || "")) tag = "Last 5 hours";
   else if (/weekly/i.test(w || "")) tag = "This week";
   else if (/monthly/i.test(w || "")) tag = "This month";
@@ -829,16 +830,16 @@ function windowTag(w, name) {
 }
 const WIN_ORDER = {
   "5h": 0, fiveHour: 0, rolling: 0,
-  "agy-g4neon": 0, "agy-g4hydrogen": 1, "agy-g3flash": 2, "agy-g3image": 3, "agy-g3pro": 4, "agy-claude": 5,
-  weekly: 6, "agy-g4argon": 7, "agy-g4argon-5h": 7, "agy-gemini-weekly": 8, "agy-3p-weekly": 9,
-  monthly: 10, mcp: 11,
+  "agy-g4neon": 0, "agy-g4hydrogen": 1, "agy-g4carbon": 2, "agy-g3flash": 3, "agy-g3image": 4, "agy-g3pro": 5, "agy-claude": 6,
+  weekly: 7, "agy-g4argon": 8, "agy-g4argon-5h": 8, "agy-gemini-weekly": 9, "agy-3p-weekly": 10, "agy-3p-5h": 11,
+  monthly: 12, mcp: 13,
 };
 // OpenCode Go and the Antigravity per-model 5h buckets stamp reset = sample
 // time + 5h while unused. Only mark them rolling when the reset is still
 // inside that ~5h rolling horizon; when capped by a multi-day weekly reset
 // (> 6h out), show the real reset clock instead.
 function isRollingWindow(w, resetAt) {
-  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|g4neon|g4argon-5h|claude)$/i.test(w || "");
+  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|g4neon|g4carbon|g4argon-5h|claude|3p-5h)$/i.test(w || "");
   if (!is5hRolling) return false;
   if (!resetAt) return true;
   const delta = Date.parse(resetAt) - Date.now();
@@ -932,9 +933,12 @@ const clampPct = v => Math.max(0, Math.min(100, Number(v) || 0));
 function miniA(e, capped, isHero) {
   const p = clampPct(e.percentRemaining);
   const rolling = isRollingWindow(e.window, e.resetAt);
+  // A non-rolling window without a reset is an unused allowance (Google's
+  // summary omits the reset until the window starts; the Antigravity app's
+  // View Usage panel shows the same "100% left" with no reset line).
   const reset = e.resetAt
     ? `in <span class="cd" data-at="${esc(e.resetAt)}">—</span>${rolling ? ' <span class="wclock">· rolling</span>' : ""}`
-    : "rolling";
+    : rolling ? "rolling" : "no active window";
   const title = `${e.name || ""}${capped ? " · unusable until the capped window resets" : ""}`;
   return `<div class="mini${capped ? " capped" : ""}${isHero ? " hero-row" : ""}" title="${esc(title)}">
     <span class="mtag">${windowTag(e.window, e.name)}</span>

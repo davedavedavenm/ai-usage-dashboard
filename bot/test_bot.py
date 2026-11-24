@@ -82,6 +82,7 @@ def test_argon_catalogue_window_is_shared_5h_not_durable():
         "label": "google-antigravity",
         "entries": [
             {"name": "Gemini Neon", "window": "agy-g4neon", "renderType": "percent", "percentRemaining": 50, "resetAt": "2026-11-24T21:00:58Z"},
+            {"name": "Gemini Carbon", "window": "agy-g4carbon", "renderType": "percent", "percentRemaining": 50, "resetAt": "2026-11-24T21:00:58Z"},
             {"name": "G4Argon", "window": "agy-g4argon-5h", "renderType": "percent", "percentRemaining": 40, "resetAt": "2026-11-24T21:00:58Z"},
             {"name": "Gemini weekly", "window": "agy-gemini-weekly", "renderType": "percent", "percentRemaining": 30, "resetAt": "2026-12-01T08:00:58Z"},
         ],
@@ -104,6 +105,28 @@ def test_argon_catalogue_window_is_shared_5h_not_durable():
     }
     picks = board_render.compute_best_headroom({"google-antigravity": weekly_argon})
     assert [p["window"] for p in picks] == ["G4Argon"]
+
+
+def test_claude_gpt_summary_rows_render_without_a_reset():
+    # Since 2026-11-24 the Claude/GPT rows come from Google's quota summary
+    # (the source the Antigravity app's View Usage panel shows). An unused
+    # group carries no resetAt; the board must still render both rows.
+    agy = {
+        "status": "ok",
+        "label": "google-antigravity",
+        "entries": [
+            {"name": "Gemini weekly", "window": "agy-gemini-weekly", "renderType": "percent", "percentRemaining": 93, "resetAt": "2026-12-01T08:00:58Z"},
+            {"name": "Claude/GPT weekly", "window": "agy-3p-weekly", "renderType": "percent", "percentRemaining": 100},
+            {"name": "Claude/GPT 5h", "window": "agy-3p-5h", "renderType": "percent", "percentRemaining": 100},
+        ],
+    }
+    rows = board_render._collapse_provider_rows("google-antigravity", agy, 1795335012000)["rows"]
+    assert [(r["name"], r["pct"], r["reset"]) for r in rows[1:]] == [
+        ("Claude/GPT weekly", 100.0, ""),
+        ("Claude/GPT 5h", 100.0, ""),
+    ]
+    png = board_render.render_board_png({"envelope": {"providers": {"google-antigravity": agy}}}, now_ms=1795335012000)
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_bot_commands_and_callbacks_and_auth_guard(tmp_path: Path):

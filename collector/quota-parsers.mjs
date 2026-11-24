@@ -328,6 +328,14 @@ export function antigravityArgonEntry(modelsMap) {
   return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-argon(?:-|$)/i, "G4Argon", "agy-g4argon-5h");
 }
 
+// Gemini 4 Carbon carries a live quota since 2026-11-24 and is in the
+// account's model picker (Dave asked for the row the same day). Like Neon and
+// Hydrogen it shares the Gemini 5h bucket and is invisible to the pinned CLI's
+// older UA, so it is read from the catalogue's gemini-4-carbon-* bucket.
+export function antigravityCarbonEntry(modelsMap) {
+  return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-carbon(?:-|$)/i, "Gemini Carbon", "agy-g4carbon");
+}
+
 // GPT-OSS is not an Antigravity model Dave uses. The host quota config may
 // still ask the CLI for it, so drop it at the display boundary before the
 // card and alert code see it. The id is spelled "GPT-OSS" in display output
@@ -337,11 +345,13 @@ export function filterAntigravityDisplayEntries(entries) {
 }
 
 // v1internal:retrieveUserQuotaSummary (UA antigravity/cli/1.4.7+) publishes
-// family groups. Gemini 4 Argon has its own group and is absent from the old
-// fetchAvailableModels / retrieveUserQuota endpoints the quota CLI still uses,
-// which is why the card used to say Google hid the model. Return a publishable
-// percent entry for the Argon bucket, or null when the summary has no usable
-// (non-disabled) Argon window.
+// family groups. Gemini 4 Argon used to have its own group here and was absent
+// from the old fetchAvailableModels / retrieveUserQuota endpoints the quota CLI
+// still uses, which is why the card used to say Google hid the model. Since
+// 2026-11-24 the summary no longer returns that group (see
+// antigravityArgonEntry); this stays for when Google publishes it again. Return
+// a publishable percent entry for the Argon bucket, or null when the summary
+// has no usable (non-disabled) Argon window.
 export function antigravityQuotaSummaryArgon(body) {
   const groups = Array.isArray(body?.groups) ? body.groups : [];
   for (const group of groups) {
@@ -368,14 +378,10 @@ export function antigravityQuotaSummaryArgon(body) {
   return null;
 }
 
-// The summary's weekly buckets are the durable plan allowances. The 5h buckets
-// are already represented by the per-model rows from fetchAvailableModels, and
-// Argon has its own entry, so this returns only the plan-level weekly rows that
-// the card would otherwise hide (verified live 2026-11-12: Gemini weekly 74.4%
-// left while every per-model row read 100%).
-export function antigravityQuotaSummaryWeekly(body) {
+// One walk over the summary's usable (non-disabled) buckets of one window
+// kind, in API order. `is3p` marks the Claude/GPT family ("3p" = third-party).
+function* antigravitySummaryBuckets(body, kind) {
   const groups = Array.isArray(body?.groups) ? body.groups : [];
-  const out = [];
   for (const group of groups) {
     if (!group) continue;
     const groupName = String(group.displayName || "");
@@ -384,26 +390,53 @@ export function antigravityQuotaSummaryWeekly(body) {
       if (!bucket || bucket.disabled) continue;
       const bucketId = String(bucket.bucketId || "");
       const bucketName = String(bucket.displayName || "");
-      if (!/weekly/i.test(bucketId) && !/weekly/i.test(bucketName)) continue;
-      if (/argon/i.test(groupName) || /argon/i.test(bucketId)) continue;
-      if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
-      const resetAt = typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : "";
-      // A weekly bucket with no reset stamp is not published. Live
-      // 2026-11-24: 3p-weekly answered exactly 100% with no reset and no
-      // description while the model catalogue's Claude bucket carried 49%
-      // with a weekly reset; showing both made the card contradict its own
-      // Claude row. A shape-based inference, not a confirmed fact — the
-      // endpoints disagree (DECISIONS.md, 2026-11-24).
-      if (!resetAt) continue;
       const is3p = /claude|gpt|3p/i.test(groupName) || /(?:^|-)3p(?:-|$)/i.test(bucketId);
-      out.push({
-        name: is3p ? "Claude/GPT weekly" : "Gemini weekly",
-        renderType: "percent",
-        percentRemaining: Math.round(Math.max(0, Math.min(1, bucket.remainingFraction)) * 100),
-        resetAt,
-        window: is3p ? "agy-3p-weekly" : "agy-gemini-weekly",
-      });
+      const wanted = kind === "weekly"
+        ? (/weekly/i.test(bucketId) || /weekly/i.test(bucketName))
+        : (/5h/i.test(bucketId) || /5\s*hour/i.test(bucketName) || /^5h$/i.test(String(bucket.window || "")));
+      if (!wanted) continue;
+      if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
+      yield { groupName, bucket, bucketId, is3p };
     }
+  }
+}
+
+// A bucket with no resetTime is a real reading, not a placeholder: the
+// Antigravity app's View Usage panel shows "100% left" with no reset line for
+// an unused group (checked against the panel 2026-11-24). Publish it as is.
+function summaryBucketEntry(bucket, name, window) {
+  const resetAt = typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : "";
+  return {
+    name,
+    renderType: "percent",
+    percentRemaining: Math.round(Math.max(0, Math.min(1, bucket.remainingFraction)) * 100),
+    ...(resetAt ? { resetAt } : {}),
+    window,
+  };
+}
+
+// The summary's weekly buckets are the durable plan allowances (verified live
+// 2026-11-12: Gemini weekly 74.4% left while every per-model row read 100%).
+// Argon has its own entry, so this returns the other groups' weekly rows.
+export function antigravityQuotaSummaryWeekly(body) {
+  const out = [];
+  for (const { groupName, bucket, bucketId, is3p } of antigravitySummaryBuckets(body, "weekly")) {
+    if (/argon/i.test(groupName) || /argon/i.test(bucketId)) continue;
+    out.push(summaryBucketEntry(bucket, is3p ? "Claude/GPT weekly" : "Gemini weekly", is3p ? "agy-3p-weekly" : "agy-gemini-weekly"));
+  }
+  return out;
+}
+
+// The 5h buckets of the non-Gemini groups. The Gemini Models group's 5h bucket
+// is already on the card as the per-model rows (Flash, Image, Neon, Hydrogen,
+// Carbon, Argon all share it), so only a group without per-model rows — today
+// Claude and GPT — needs its own 5h row.
+export function antigravityQuotaSummaryFiveHour(body) {
+  const out = [];
+  for (const { groupName, bucket, bucketId, is3p } of antigravitySummaryBuckets(body, "5h")) {
+    if (/gemini|argon/i.test(groupName) || /argon/i.test(bucketId) || /^gemini-/i.test(bucketId)) continue;
+    const slug = groupName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    out.push(summaryBucketEntry(bucket, is3p ? "Claude/GPT 5h" : `${groupName} 5h`, is3p ? "agy-3p-5h" : `agy-${slug || "group"}-5h`));
   }
   return out;
 }

@@ -163,6 +163,7 @@ def _collapse_provider_rows(pid: str, r: dict[str, Any], now_ms: float) -> dict[
                 "agy-g3image",
                 "agy-g4neon",
                 "agy-g4hydrogen",
+                "agy-g4carbon",
                 "agy-g4argon-5h",
             }:
                 if seen_5h_agy:

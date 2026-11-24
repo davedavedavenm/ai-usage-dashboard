@@ -127,6 +127,13 @@ function pctEntry(name, percentRemaining, resetAtIso, window) {
   return { name, renderType: "percent", percentRemaining: Math.round(percentRemaining), resetAt: resetAtIso, window };
 }
 
+// "A", "A & B", "A, B & C" — the card note's list of catalogue-sourced models.
+function joinLabels(labels) {
+  const list = (labels || []).filter(Boolean);
+  if (list.length <= 1) return list[0] || "";
+  return `${list.slice(0, -1).join(", ")} & ${list[list.length - 1]}`;
+}
+
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // The subscription endpoint returns a local calendar date, so format the
@@ -689,7 +696,7 @@ function windowDurationHours(entry) {
   if (win === "weekly" || /week/i.test(name)) return 24 * 7;   // 168h
   if (win === "daily" || /day/i.test(name)) return 24;         // 24h
   // Antigravity's per-model buckets (agy-claude, agy-g3flash, agy-g3image,
-  // agy-g4hydrogen, agy-g4neon) are 5h rolling windows: when unused, Google stamps reset =
+  // agy-g4hydrogen, agy-g4neon, agy-g4carbon) are 5h rolling windows: when unused, Google stamps reset =
   // sample_time + 5h, so treating any of them as durable causes a ~12h rollover
   // alert every ~2h as the reset drifts. Only Argon (when the summary still
   // publishes its weekly group) and the plan-level Gemini weekly bucket are
@@ -1335,22 +1342,33 @@ async function main() {
     }
     if (id === "google-antigravity") {
       r.entries = renameAntigravityDisplayEntries(filterAntigravityDisplayEntries(r.entries));
-      // The summary also publishes the plan-level weekly buckets. Per-model
-      // rows only show the 5h buckets, so without this the durable Gemini
-      // allowance can read 100% while its weekly bucket is mostly used.
       const plan = await probeGooglePlan();
-      // Gemini 4 Neon and Hydrogen are newer offerings the pinned CLI's
-      // catalogue UA cannot see. Both share the Gemini 5h bucket, so publish
+      const summaryRows = [...(plan?.weekly || []), ...(plan?.fiveHour || [])];
+      // The quota summary is what the Antigravity app's View Usage panel shows.
+      // Its Claude/GPT group buckets replace the CLI's per-model Claude row:
+      // that row's quotaInfo is not a live allowance. It read a near-constant
+      // 49-50% with a weekly-looking reset while the summary and the app both
+      // showed 100% weekly / 100% 5h (history.jsonl 18-24 Nov; panel checked
+      // 2026-11-24). The per-model row stays only as a fallback for a run in
+      // which the summary did not answer.
+      let claudeFromSummary = false;
+      if (summaryRows.some(e => /^agy-3p-/.test(String(e?.window || "")))) {
+        const before = r.entries.length;
+        r.entries = r.entries.filter(e => e.window !== "agy-claude");
+        claudeFromSummary = r.entries.length !== before;
+      }
+      // Gemini 4 Neon, Hydrogen and Carbon are offerings the pinned CLI's
+      // catalogue UA cannot see. All share the Gemini 5h bucket, so publish
       // their own quotaInfo entries beside the other Gemini rows.
       const addedCatalogue = [];
-      for (const [entry, label] of [[plan?.neon, "Gemini Neon"], [plan?.hydrogen, "Gemini Hydrogen"]]) {
+      for (const [entry, label] of [[plan?.neon, "Gemini Neon"], [plan?.hydrogen, "Gemini Hydrogen"], [plan?.carbon, "Gemini Carbon"]]) {
         if (entry && !r.entries.some(e => e.window === entry.window)) {
           r.entries.push(entry);
           addedCatalogue.push(label);
         }
       }
       if (addedCatalogue.length) {
-        r.note = [r.note, `${addedCatalogue.join(" & ")} from Google's model catalogue`].filter(Boolean).join(" · ");
+        r.note = [r.note, `${joinLabels(addedCatalogue)} from Google's model catalogue`].filter(Boolean).join(" · ");
       }
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
         if (plan?.argon) {
@@ -1367,13 +1385,19 @@ async function main() {
       // it was written for; the durable weekly rows have their own resets and
       // would otherwise hide the unmetered-account note.
       const constantFull = isConstantAntigravityReport(r.entries);
-      let addedWeekly = false;
-      for (const entry of plan?.weekly || []) {
+      // The summary's plan-level buckets: Gemini weekly, and the Claude/GPT
+      // weekly + 5h limits. Per-model rows only show the 5h Gemini bucket, so
+      // without these the durable allowance can read 100% while mostly used.
+      const addedSummary = [];
+      for (const entry of summaryRows) {
         if (r.entries.some(e => e.window === entry.window)) continue;
         r.entries.push(entry);
-        addedWeekly = true;
+        addedSummary.push(String(entry.window || ""));
       }
-      if (addedWeekly) {
+      if (claudeFromSummary) {
+        r.note = [r.note, "Claude/GPT limits from Google's quota summary"].filter(Boolean).join(" · ");
+      }
+      if (addedSummary.some(w => /weekly/.test(w))) {
         r.note = [r.note, "weekly allowances from Google's quota summary"].filter(Boolean).join(" · ");
       }
       if (constantFull) {

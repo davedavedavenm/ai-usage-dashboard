@@ -8,6 +8,12 @@
 // per-model endpoints omit Argon entirely), so the card can show a real
 // percentage instead of a placeholder.
 //
+// Two more jobs since then: the summary's plan-level group buckets are what
+// the Antigravity app's View Usage panel shows (Gemini Models, Claude and GPT
+// models — each a weekly and a 5h limit), and the Gemini 4 rows (Neon,
+// Hydrogen, Carbon, Argon) are read from the model catalogue with the newer
+// UA because the pinned CLI's older UA cannot see them.
+//
 // Credentials come from the files the antigravity plugin already owns: the
 // account store (refresh token + project) and the plugin's companion package
 // (Google's public OAuth client id/secret, which is baked into that npm
@@ -18,7 +24,7 @@ import { existsSync, readFileSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { antigravityArgonEntry, antigravityHydrogenEntry, antigravityNeonEntry, antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
+import { antigravityArgonEntry, antigravityCarbonEntry, antigravityHydrogenEntry, antigravityNeonEntry, antigravityQuotaSummaryArgon, antigravityQuotaSummaryFiveHour, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
@@ -111,26 +117,27 @@ async function post(url, { headers, body, timeoutMs = PROBE_TIMEOUT_MS }) {
   }
 }
 
-// Returns { ok, tier, paidTier, upgradeOffered, project, argon, argonSource,
-// hydrogen, neon, weekly } on success, and { ok: false, error, argon,
-// argonSource, hydrogen, neon, weekly } on failure. `argon` is the live G4Argon
-// percent entry, read from the quota-summary group when Google still publishes
-// it and otherwise from the model catalogue's own gemini-4-argon-* bucket
-// (since 2026-11-24 that bucket is the shared Gemini 5 h one); `argonSource`
-// says which endpoint supplied it. `hydrogen` and `neon` are the Gemini 4
-// entries from the model catalogue. A failed plan probe must never take the
-// collector down or change what it publishes.
+// Returns { ok, tier, paidTier, upgradeOffered, project, ...found } on success
+// and { ok: false, error, ...found } on failure, where `found` carries whatever
+// was read before the outcome and is identical in both:
+//   argon, argonSource  - the live G4Argon percent entry: from the
+//       quota-summary group when Google still publishes it, otherwise from the
+//       model catalogue's own gemini-4-argon-* bucket (since 2026-11-24 that
+//       bucket is the shared Gemini 5 h one); argonSource names the endpoint.
+//   hydrogen, neon, carbon - the Gemini 4 entries from the model catalogue.
+//   weekly, fiveHour   - the summary's group buckets. This is the source the
+//       Antigravity app's View Usage panel shows, so it is the authority for
+//       the Claude/GPT family (panel checked 2026-11-24).
+// A failed plan probe must never take the collector down or change what it
+// publishes.
 export async function probeGooglePlan() {
-  let argon = null;
-  let argonSource = null;
-  let hydrogen = null;
-  let neon = null;
-  let weekly = [];
+  const found = { argon: null, argonSource: null, hydrogen: null, neon: null, carbon: null, weekly: [], fiveHour: [] };
+  const fail = error => ({ ok: false, error, ...found });
   try {
     const account = readAccount();
-    if (!account) return { ok: false, error: "no Antigravity account store on this host", argon, argonSource, hydrogen, neon, weekly };
+    if (!account) return fail("no Antigravity account store on this host");
     const credentials = readClientCredentials();
-    if (!credentials) return { ok: false, error: "Antigravity plugin companion not found", argon, argonSource, hydrogen, neon, weekly };
+    if (!credentials) return fail("Antigravity plugin companion not found");
 
     const tokenResponse = await post(TOKEN_URL, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -141,9 +148,9 @@ export async function probeGooglePlan() {
         grant_type: "refresh_token",
       }),
     });
-    if (!tokenResponse.ok) return { ok: false, error: "Antigravity token refresh HTTP " + tokenResponse.status, argon, argonSource, hydrogen, neon, weekly };
+    if (!tokenResponse.ok) return fail("Antigravity token refresh HTTP " + tokenResponse.status);
     const token = await tokenResponse.json().catch(() => null);
-    if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token", argon, argonSource, hydrogen, neon, weekly };
+    if (!token?.access_token) return fail("Antigravity token refresh returned no access token");
 
     try {
       for (const summaryUrl of QUOTA_SUMMARY_URLS) {
@@ -158,19 +165,20 @@ export async function probeGooglePlan() {
         });
         if (!summaryResponse.ok) continue;
         const summary = await summaryResponse.json().catch(() => null);
-        // Keep the daily host's weekly rows even when production has to supply
+        // Keep the daily host's group rows even when production has to supply
         // the Argon bucket: production serves stale Gemini buckets (2026-11-08).
-        if (!weekly.length) weekly = antigravityQuotaSummaryWeekly(summary);
+        if (!found.weekly.length) found.weekly = antigravityQuotaSummaryWeekly(summary);
+        if (!found.fiveHour.length) found.fiveHour = antigravityQuotaSummaryFiveHour(summary);
         const summaryArgon = antigravityQuotaSummaryArgon(summary);
         if (summaryArgon) {
-          argon = summaryArgon;
-          argonSource = "summary";
+          found.argon = summaryArgon;
+          found.argonSource = "summary";
           break;
         }
       }
     } catch {
       // The plan probe still works without the summary; the card falls back to
-      // a "not reported" Argon row instead.
+      // its per-model rows instead.
     }
 
     try {
@@ -186,31 +194,34 @@ export async function probeGooglePlan() {
         });
         if (!modelsResponse.ok) continue;
         const catalogue = await modelsResponse.json().catch(() => null);
+        const models = catalogue?.models;
         // The summary no longer publishes an Argon group (2026-11-24); the
         // catalogue's gemini-4-argon-* bucket is then the only real reading.
-        if (!argon) {
-          const catalogueArgon = antigravityArgonEntry(catalogue?.models);
+        if (!found.argon) {
+          const catalogueArgon = antigravityArgonEntry(models);
           if (catalogueArgon) {
-            argon = catalogueArgon;
-            argonSource = "catalogue";
+            found.argon = catalogueArgon;
+            found.argonSource = "catalogue";
           }
         }
-        if (!neon) neon = antigravityNeonEntry(catalogue?.models);
-        if (!hydrogen) hydrogen = antigravityHydrogenEntry(catalogue?.models);
-        if ((neon && hydrogen) || (catalogue?.models && (neon || hydrogen))) break;
+        if (!found.neon) found.neon = antigravityNeonEntry(models);
+        if (!found.hydrogen) found.hydrogen = antigravityHydrogenEntry(models);
+        if (!found.carbon) found.carbon = antigravityCarbonEntry(models);
+        const anyCatalogue = found.neon || found.hydrogen || found.carbon;
+        if ((found.neon && found.hydrogen && found.carbon) || (models && anyCatalogue)) break;
       }
     } catch {
-      // Neon/Hydrogen are newer offerings; absent rows are honest, never an error.
+      // Neon/Hydrogen/Carbon are newer offerings; absent rows are honest, never an error.
     }
 
     const planResponse = await post(LOAD_CODE_ASSIST_URL, {
       headers: { Authorization: "Bearer " + token.access_token, "Content-Type": "application/json", "User-Agent": USER_AGENT },
       body: JSON.stringify({ cloudaicompanionProject: account.projectId }),
     });
-    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, argonSource, hydrogen, neon, weekly };
+    if (!planResponse.ok) return fail("loadCodeAssist HTTP " + planResponse.status);
     const plan = await planResponse.json().catch(() => null);
     const tier = plan?.currentTier?.id || null;
-    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, argonSource, hydrogen, neon, weekly };
+    if (!tier) return fail("loadCodeAssist returned no tier");
     // Google's upsell text embeds the account email in a URL, so only its
     // presence is read; the wording is never published.
     const upgradeOffered = Boolean(plan?.currentTier?.upgradeSubscriptionUri || plan?.currentTier?.upgradeSubscriptionText);
@@ -221,14 +232,10 @@ export async function probeGooglePlan() {
       paidTier: typeof paid === "string" ? paid : (paid?.id || null),
       upgradeOffered,
       project: account.projectId,
-      argon,
-      argonSource,
-      hydrogen,
-      neon,
-      weekly,
+      ...found,
     };
   } catch (error) {
-    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, argonSource, hydrogen, neon, weekly };
+    return fail(String(error?.message || error).slice(0, 160));
   }
 }
 
