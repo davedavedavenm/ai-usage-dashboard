@@ -247,7 +247,13 @@ async function fetchRadeonLoad() {
   }
   if (!entries.length) return { status: "error", error: "Radeon Cloud load API error: no usable model loads" };
   entries.sort((a, b) => b.utilization - a.utilization);
-  return { status: "ok", label: "Radeon Cloud", entries, note: "fleet load (utilization %) · public Token Factory feed" };
+  // Repeat the feed's own scope word. It read "fleet" until at least
+  // 2026-10-30 and "gateway" on 2026-11-24; a hard-coded label goes stale
+  // silently when AMD changes what the figures measure.
+  const scope = typeof result.body.scope === "string" && result.body.scope.trim()
+    ? result.body.scope.trim().toLowerCase() + " "
+    : "";
+  return { status: "ok", label: "Radeon Cloud", entries, note: `${scope}load (utilization %) · public Token Factory feed` };
 }
 
 function aliFindContaining(value, keys) {

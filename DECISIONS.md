@@ -586,11 +586,15 @@ the existing 2026-09-05 Claude/GPT rule. The daily host is still the source
 (2026-11-08) and the constant-full annotation is still computed before the
 weekly rows are appended.
 
-(2026-11-24: a weekly bucket with **no** `resetTime` is the unmetered
-placeholder shape — live that day `3p-weekly` answered 100% with no reset while
-the catalogue's Claude bucket carried a real 49% weekly value. The parser now
-skips reset-less weekly buckets, so the card cannot contradict its own Claude
-row. A real bucket always carries a reset and reappears unchanged.)
+(2026-11-24: a weekly bucket with **no** `resetTime` is no longer published.
+Live that day `3p-weekly` answered exactly 100% with no reset and no
+`description`, while the model catalogue's Claude bucket carried 49% with a
+30 Nov reset; publishing both made the card contradict its own Claude row.
+This is an
+**inference from the bucket's shape**, not a confirmed fact: the two Google
+endpoints disagree on Claude's weekly allowance and the Antigravity app's View
+Usage panel has not been read to arbitrate. The card shows the catalogue's 49%.
+A real bucket always carries a reset and reappears unchanged.)
 
 The per-model 5 h and OpenCode Go rolling windows are provider-stamped
 `reset = sample time + 5 h` while unused. The dashboard now labels those
@@ -609,9 +613,10 @@ UA) now lists:
   allowance.
 - **Gemini 4 Carbon** (`gemini-4-carbon-disabled`) — listed but disabled, no
   `quotaInfo`; never publish a row for it. (2026-11-24: the catalogue now
-  reports `gemini-4-carbon-*` with a live shared 5 h `quotaInfo`; it stays
-  unshown by model-set choice, not because Google withholds it — see the Argon
-  entry below.)
+  reports `gemini-4-carbon-*` with a live shared 5 h `quotaInfo` and Google's
+  summary names Carbon among the current Gemini models, so the "disabled"
+  premise is gone. It is still not shown; whether to add it is Dave's call,
+  asked 2026-11-24 — see the Argon entry below.)
 - **Gemini 3 Pro** — gone from the catalogue; the old `G3Pro` slot has nothing
   to report and is simply absent.
 - **Gemini 4 Argon** — now also present in `fetchAvailableModels` (13.3%
@@ -688,14 +693,23 @@ endpoint reports Argon, and its note says so.
 
 Verified after deploy (2026-11-24T20:03Z collect): card shows `G4Argon 78%`
 (reset 21:00:58Z) with the note "G4Argon from Google's model catalogue", and
-all seven providers `ok`. The Telegram bot's board/`/resets` logic also treats
-`agy-g4argon-5h` as a shared 5 h bucket (no durable-headroom boost, no
-duplicate reset line).
+all seven providers `ok`. The Telegram bot treats `agy-g4argon-5h` as a shared
+5 h bucket (no durable-headroom boost, no duplicate `/resets` line, collapsed
+into the board's single "Gemini 5h (shared)" bar).
+
+**Google's own current model list.** The daily summary's `Gemini Models` group
+carries `description: "Models within this group: Gemini 4 Neon, Gemini 4
+Carbon, Gemini 4 Argon, Gemini 4 Hydrogen, Gemini 3.8 Flash"`, and the Claude
+group names `Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B`. That sentence
+is the simplest check of whether the card's model set is still current — read
+it before adding or trusting a per-model probe.
 
 Also on the same catalogue check: **Gemini 4 Carbon** now reports a live
-shared 5 h `quotaInfo` (it is no longer `-disabled`). It stays off the card by
-Dave's model-set choice; this is not evidence Google withholds it. The pinned
-CLI still cannot see Argon/Neon/Hydrogen because of its older UA, so the
+shared 5 h `quotaInfo` (it is no longer `-disabled`) and is named in that
+sentence, so the 2026-11-12 "disabled" premise for hiding it is gone. It is
+still not shown; adding it is Dave's call (asked 2026-11-24, unanswered at
+the time of writing). The pinned CLI still cannot see Argon/Neon/Hydrogen
+because of its older UA (18 models versus 37 on the same host), so the
 collector-side catalogue probe remains the source for those rows.
 
 ## OpenCode Go API key is updatable from Web UI Settings and mirrored to `auth.json` by hash — Active (2026-11-18)
@@ -1040,6 +1054,15 @@ the official Swagger lists the same route, plus `/api/tokenfactory/model`
 (needs `?id=`) and `/api/profile/model-usage` (session, 401 anonymously).
 The live model set fluctuates (8-10 rows across probes), so the card follows
 the feed rather than a fixed catalogue; that is expected, not stale data.
+
+Re-verified 2026-11-24: the feed answers 13 models and its `scope` now reads
+`"gateway"` (it was `"fleet"` on 2026-10-30), identical from khpi5 and the
+Windows workstation (`x-rc-cache: HIT`). The collector no longer hard-codes a
+scope word: the card note repeats the feed's own (`gateway load (utilization
+%) · public Token Factory feed`) and the subtitle says "model load". AMD's
+`/api/tokenfactory/model?id=<feed id>` answers 404 for these ids, so display
+names cannot be cross-checked beyond the feed itself; the card shows the ids
+AMD publishes. Do not reintroduce a fixed "fleet" label.
 
 ## Dashboard mono font stack leads with Consolas - Active (2026-10-03)
 

@@ -388,10 +388,12 @@ export function antigravityQuotaSummaryWeekly(body) {
       if (/argon/i.test(groupName) || /argon/i.test(bucketId)) continue;
       if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
       const resetAt = typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : "";
-      // A weekly bucket with no reset stamp is the unmetered placeholder shape.
-      // Live 2026-11-24: 3p-weekly answered 100% with no reset while the model
-      // catalogue's Claude bucket carried a real 49% weekly value; publishing
-      // the placeholder made the card contradict its own Claude row.
+      // A weekly bucket with no reset stamp is not published. Live
+      // 2026-11-24: 3p-weekly answered exactly 100% with no reset and no
+      // description while the model catalogue's Claude bucket carried 49%
+      // with a weekly reset; showing both made the card contradict its own
+      // Claude row. A shape-based inference, not a confirmed fact — the
+      // endpoints disagree (DECISIONS.md, 2026-11-24).
       if (!resetAt) continue;
       const is3p = /claude|gpt|3p/i.test(groupName) || /(?:^|-)3p(?:-|$)/i.test(bucketId);
       out.push({

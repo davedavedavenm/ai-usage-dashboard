@@ -287,9 +287,9 @@ test('antigravity quota summary exposes the plan-level weekly buckets, not just 
   assert.deepEqual(antigravityQuotaSummaryWeekly({
     groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.5, disabled: true }] }],
   }), []);
-  // A weekly bucket without a reset stamp is Google's unmetered placeholder
-  // shape (live 2026-11-24: 3p-weekly 100%, no reset, while the catalogue's
-  // Claude bucket carried a real 49% weekly value). Never publish it.
+  // A weekly bucket without a reset stamp is not published (live 2026-11-24:
+  // 3p-weekly 100%, no reset, while the catalogue's Claude bucket carried 49%
+  // with a weekly reset). A real bucket always carries a reset.
   assert.deepEqual(antigravityQuotaSummaryWeekly({
     groups: [{ displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-weekly', remainingFraction: 1 }] }],
   }), []);

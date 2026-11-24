@@ -141,7 +141,7 @@ If the AccessKey source fails, the collector degrades through the legacy
 | OpenCode Go | direct usage API | Web UI Settings (`opencodeGoApiKey`, mirrored to `auth.json`) or `auth.json` `opencode-go` key |
 | Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (Gemini Flash, Claude, Gemini Image from the CLI; Gemini Neon & Gemini Hydrogen from the daily model catalogue; G4Argon and weekly buckets from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). Neon & Hydrogen share the Gemini 5 h bucket; Gemini 4 Carbon is disabled and GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
-| Radeon Cloud | AMD Token Factory fleet-load API (`/radeon/api/tokenfactory/load`) — live per-model capacity/availability of the public free model APIs | none (public feed) |
+| Radeon Cloud | AMD Token Factory load API (`/radeon/api/tokenfactory/load`) — live per-model load/availability of the public free model APIs; the card note repeats the feed's own `scope` word | none (public feed) |
 
 Exhausted windows are shown as 0% left, not hidden. Each card's big number
 always uses the provider's own color; critical windows pulse and get a red
