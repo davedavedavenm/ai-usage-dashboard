@@ -11,6 +11,7 @@ import {
   renameAntigravityDisplayEntries,
   antigravityHydrogenEntry,
   antigravityNeonEntry,
+  antigravityArgonEntry,
   antigravityG4ArgonUnavailable,
   antigravityQuotaSummaryArgon,
   antigravityQuotaSummaryWeekly,
@@ -162,6 +163,25 @@ test('antigravity model catalogue exposes the new Gemini 4 Neon offering', () =>
   assert.equal(antigravityNeonEntry(null), null);
 });
 
+test('antigravity model catalogue exposes Gemini 4 Argon on the shared 5h bucket', () => {
+  // Live 2026-11-24 shape: the quota summary stopped returning the Argon
+  // group, while the daily catalogue lists gemini-4-argon-* at the same 81% /
+  // 5h reset as Flash, Neon and Hydrogen. The row must come from the catalogue
+  // and stay a short window, not the old weekly agy-g4argon.
+  const models = {
+    'gemini-4-argon-high': { displayName: 'Gemini 4 Argon (High)', quotaInfo: { remainingFraction: 0.8091044, resetTime: '2026-11-24T21:00:58Z' } },
+    'gemini-4-argon-medium': { displayName: 'Gemini 4 Argon (Medium)', quotaInfo: { remainingFraction: 0.8091044, resetTime: '2026-11-24T21:00:58Z' } },
+    'gemini-4-neon-high': { displayName: 'Gemini 4 Neon (High)', quotaInfo: { remainingFraction: 0.8091044, resetTime: '2026-11-24T21:00:58Z' } },
+  };
+  assert.deepEqual(antigravityArgonEntry(models), {
+    name: 'G4Argon', renderType: 'percent', percentRemaining: 81,
+    resetAt: '2026-11-24T21:00:58Z', window: 'agy-g4argon-5h',
+  });
+  assert.equal(antigravityArgonEntry({ 'gemini-4-argon-high': { quotaInfo: null } }), null);
+  assert.equal(antigravityArgonEntry({}), null);
+  assert.equal(antigravityArgonEntry(null), null);
+});
+
 test('antigravity display drops GPT-OSS even when the host probe returns it', () => {
   const entries = [
     { name: 'Claude', renderType: 'percent', percentRemaining: 0, window: 'agy-claude' },
@@ -267,6 +287,12 @@ test('antigravity quota summary exposes the plan-level weekly buckets, not just 
   assert.deepEqual(antigravityQuotaSummaryWeekly({
     groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.5, disabled: true }] }],
   }), []);
+  // A weekly bucket without a reset stamp is Google's unmetered placeholder
+  // shape (live 2026-11-24: 3p-weekly 100%, no reset, while the catalogue's
+  // Claude bucket carried a real 49% weekly value). Never publish it.
+  assert.deepEqual(antigravityQuotaSummaryWeekly({
+    groups: [{ displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-weekly', remainingFraction: 1 }] }],
+  }), []);
   // A 5h-only response has nothing durable to add.
   assert.deepEqual(antigravityQuotaSummaryWeekly({
     groups: [{ displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-5h', remainingFraction: 1 }] }],
@@ -284,14 +310,14 @@ test('G4Argon fallback says Google did not report it, never claims the model is 
     window: 'agy-g4argon',
     degraded: true,
   });
-  assert.match(full.note, /quota summary did not return/);
+  assert.match(full.note, /Neither Google's quota summary nor its model catalogue/);
   assert.match(full.note, /free-tier/);
   assert.match(full.note, /g1-pro-tier/);
   assert.doesNotMatch(full.entry.value, /not offered|hidden/);
 
   const unknown = antigravityG4ArgonUnavailable({ ok: false });
   assert.equal(unknown.entry.value, 'not reported by Google');
-  assert.match(unknown.note, /quota summary did not return/);
+  assert.match(unknown.note, /Neither Google's quota summary nor its model catalogue/);
 });
 
 test('retainSkippedProviders preserves recent provider state when a collect skips a provider', () => {

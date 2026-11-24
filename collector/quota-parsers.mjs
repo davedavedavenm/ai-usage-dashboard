@@ -319,6 +319,15 @@ export function antigravityNeonEntry(modelsMap) {
   return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-neon(?:-|$)/i, "Gemini Neon", "agy-g4neon");
 }
 
+// Gemini 4 Argon moved onto the shared Gemini 5h bucket (verified 2026-11-24):
+// the catalogue lists gemini-4-argon-* with the same quotaInfo as Flash/Neon/
+// Hydrogen, while the quota summary stopped returning its weekly group. Read
+// the model's own catalogue bucket when the summary has nothing, and keep a
+// distinct 5h window id so rollover alerts never treat it as durable.
+export function antigravityArgonEntry(modelsMap) {
+  return antigravityCatalogueModelEntry(modelsMap, /^gemini-4-argon(?:-|$)/i, "G4Argon", "agy-g4argon-5h");
+}
+
 // GPT-OSS is not an Antigravity model Dave uses. The host quota config may
 // still ask the CLI for it, so drop it at the display boundary before the
 // card and alert code see it. The id is spelled "GPT-OSS" in display output
@@ -378,12 +387,18 @@ export function antigravityQuotaSummaryWeekly(body) {
       if (!/weekly/i.test(bucketId) && !/weekly/i.test(bucketName)) continue;
       if (/argon/i.test(groupName) || /argon/i.test(bucketId)) continue;
       if (typeof bucket.remainingFraction !== "number" || !Number.isFinite(bucket.remainingFraction)) continue;
+      const resetAt = typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : "";
+      // A weekly bucket with no reset stamp is the unmetered placeholder shape.
+      // Live 2026-11-24: 3p-weekly answered 100% with no reset while the model
+      // catalogue's Claude bucket carried a real 49% weekly value; publishing
+      // the placeholder made the card contradict its own Claude row.
+      if (!resetAt) continue;
       const is3p = /claude|gpt|3p/i.test(groupName) || /(?:^|-)3p(?:-|$)/i.test(bucketId);
       out.push({
         name: is3p ? "Claude/GPT weekly" : "Gemini weekly",
         renderType: "percent",
         percentRemaining: Math.round(Math.max(0, Math.min(1, bucket.remainingFraction)) * 100),
-        resetAt: typeof bucket.resetTime === "string" && bucket.resetTime.trim() ? bucket.resetTime.trim() : undefined,
+        resetAt,
         window: is3p ? "agy-3p-weekly" : "agy-gemini-weekly",
       });
     }
@@ -412,7 +427,7 @@ export function antigravityG4ArgonUnavailable(plan) {
       window: "agy-g4argon",
       degraded: true,
     },
-    note: `Google's quota summary did not return a G4Argon bucket this run${tierNote}; the Antigravity app may still offer the model. This is not proof the model is unavailable.`,
+    note: `Neither Google's quota summary nor its model catalogue returned a G4Argon bucket this run${tierNote}; the Antigravity app may still offer the model. This is not proof the model is unavailable.`,
   };
 }
 

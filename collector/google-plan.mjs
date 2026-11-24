@@ -18,7 +18,7 @@ import { existsSync, readFileSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
-import { antigravityHydrogenEntry, antigravityNeonEntry, antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
+import { antigravityArgonEntry, antigravityHydrogenEntry, antigravityNeonEntry, antigravityQuotaSummaryArgon, antigravityQuotaSummaryWeekly } from "./quota-parsers.mjs";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
@@ -111,22 +111,26 @@ async function post(url, { headers, body, timeoutMs = PROBE_TIMEOUT_MS }) {
   }
 }
 
-// Returns { ok, tier, paidTier, upgradeOffered, project, argon, hydrogen,
-// neon, weekly } on success, and { ok: false, error, argon, hydrogen, neon,
-// weekly } on failure. `argon` is the live G4Argon percent entry from the
-// quota-summary endpoint when Google publishes one; `hydrogen` and `neon` are
-// the Gemini 4 entries from the model catalogue. A failed plan probe must never
-// take the collector down or change what it publishes.
+// Returns { ok, tier, paidTier, upgradeOffered, project, argon, argonSource,
+// hydrogen, neon, weekly } on success, and { ok: false, error, argon,
+// argonSource, hydrogen, neon, weekly } on failure. `argon` is the live G4Argon
+// percent entry, read from the quota-summary group when Google still publishes
+// it and otherwise from the model catalogue's own gemini-4-argon-* bucket
+// (since 2026-11-24 that bucket is the shared Gemini 5 h one); `argonSource`
+// says which endpoint supplied it. `hydrogen` and `neon` are the Gemini 4
+// entries from the model catalogue. A failed plan probe must never take the
+// collector down or change what it publishes.
 export async function probeGooglePlan() {
   let argon = null;
+  let argonSource = null;
   let hydrogen = null;
   let neon = null;
   let weekly = [];
   try {
     const account = readAccount();
-    if (!account) return { ok: false, error: "no Antigravity account store on this host", argon, hydrogen, neon, weekly };
+    if (!account) return { ok: false, error: "no Antigravity account store on this host", argon, argonSource, hydrogen, neon, weekly };
     const credentials = readClientCredentials();
-    if (!credentials) return { ok: false, error: "Antigravity plugin companion not found", argon, hydrogen, neon, weekly };
+    if (!credentials) return { ok: false, error: "Antigravity plugin companion not found", argon, argonSource, hydrogen, neon, weekly };
 
     const tokenResponse = await post(TOKEN_URL, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -137,9 +141,9 @@ export async function probeGooglePlan() {
         grant_type: "refresh_token",
       }),
     });
-    if (!tokenResponse.ok) return { ok: false, error: "Antigravity token refresh HTTP " + tokenResponse.status, argon, hydrogen, neon, weekly };
+    if (!tokenResponse.ok) return { ok: false, error: "Antigravity token refresh HTTP " + tokenResponse.status, argon, argonSource, hydrogen, neon, weekly };
     const token = await tokenResponse.json().catch(() => null);
-    if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token", argon, hydrogen, neon, weekly };
+    if (!token?.access_token) return { ok: false, error: "Antigravity token refresh returned no access token", argon, argonSource, hydrogen, neon, weekly };
 
     try {
       for (const summaryUrl of QUOTA_SUMMARY_URLS) {
@@ -157,8 +161,12 @@ export async function probeGooglePlan() {
         // Keep the daily host's weekly rows even when production has to supply
         // the Argon bucket: production serves stale Gemini buckets (2026-11-08).
         if (!weekly.length) weekly = antigravityQuotaSummaryWeekly(summary);
-        argon = antigravityQuotaSummaryArgon(summary);
-        if (argon) break;
+        const summaryArgon = antigravityQuotaSummaryArgon(summary);
+        if (summaryArgon) {
+          argon = summaryArgon;
+          argonSource = "summary";
+          break;
+        }
       }
     } catch {
       // The plan probe still works without the summary; the card falls back to
@@ -178,6 +186,15 @@ export async function probeGooglePlan() {
         });
         if (!modelsResponse.ok) continue;
         const catalogue = await modelsResponse.json().catch(() => null);
+        // The summary no longer publishes an Argon group (2026-11-24); the
+        // catalogue's gemini-4-argon-* bucket is then the only real reading.
+        if (!argon) {
+          const catalogueArgon = antigravityArgonEntry(catalogue?.models);
+          if (catalogueArgon) {
+            argon = catalogueArgon;
+            argonSource = "catalogue";
+          }
+        }
         if (!neon) neon = antigravityNeonEntry(catalogue?.models);
         if (!hydrogen) hydrogen = antigravityHydrogenEntry(catalogue?.models);
         if ((neon && hydrogen) || (catalogue?.models && (neon || hydrogen))) break;
@@ -190,10 +207,10 @@ export async function probeGooglePlan() {
       headers: { Authorization: "Bearer " + token.access_token, "Content-Type": "application/json", "User-Agent": USER_AGENT },
       body: JSON.stringify({ cloudaicompanionProject: account.projectId }),
     });
-    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, hydrogen, neon, weekly };
+    if (!planResponse.ok) return { ok: false, error: "loadCodeAssist HTTP " + planResponse.status, argon, argonSource, hydrogen, neon, weekly };
     const plan = await planResponse.json().catch(() => null);
     const tier = plan?.currentTier?.id || null;
-    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, hydrogen, neon, weekly };
+    if (!tier) return { ok: false, error: "loadCodeAssist returned no tier", argon, argonSource, hydrogen, neon, weekly };
     // Google's upsell text embeds the account email in a URL, so only its
     // presence is read; the wording is never published.
     const upgradeOffered = Boolean(plan?.currentTier?.upgradeSubscriptionUri || plan?.currentTier?.upgradeSubscriptionText);
@@ -205,12 +222,13 @@ export async function probeGooglePlan() {
       upgradeOffered,
       project: account.projectId,
       argon,
+      argonSource,
       hydrogen,
       neon,
       weekly,
     };
   } catch (error) {
-    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, hydrogen, neon, weekly };
+    return { ok: false, error: String(error?.message || error).slice(0, 160), argon, argonSource, hydrogen, neon, weekly };
   }
 }
 

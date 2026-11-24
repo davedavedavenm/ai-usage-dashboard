@@ -812,9 +812,13 @@ function sparkSVG(id) {
 
 function windowTag(w, name) {
   let tag;
+  // Argon's catalogue window id carries a "5h" suffix; keep the model name so
+  // it does not collapse into the generic "Last 5 hours" tag with the other
+  // shared-bucket rows.
+  if (/^agy-g4argon-5h$/i.test(w || "")) tag = (name || "G4Argon");
   // The plan-level weekly rows would both collapse to "This week"; keep the
   // family name so Gemini weekly and Claude/GPT weekly stay distinguishable.
-  if (/^agy-(?:gemini|3p)-weekly$/i.test(w || "")) tag = (name || "This week");
+  else if (/^agy-(?:gemini|3p)-weekly$/i.test(w || "")) tag = (name || "This week");
   else if (/5h|fivehour|rolling/i.test(w || "")) tag = "Last 5 hours";
   else if (/weekly/i.test(w || "")) tag = "This week";
   else if (/monthly/i.test(w || "")) tag = "This month";
@@ -826,7 +830,7 @@ function windowTag(w, name) {
 const WIN_ORDER = {
   "5h": 0, fiveHour: 0, rolling: 0,
   "agy-g4neon": 0, "agy-g4hydrogen": 1, "agy-g3flash": 2, "agy-g3image": 3, "agy-g3pro": 4, "agy-claude": 5,
-  weekly: 6, "agy-g4argon": 7, "agy-gemini-weekly": 8, "agy-3p-weekly": 9,
+  weekly: 6, "agy-g4argon": 7, "agy-g4argon-5h": 7, "agy-gemini-weekly": 8, "agy-3p-weekly": 9,
   monthly: 10, mcp: 11,
 };
 // OpenCode Go and the Antigravity per-model 5h buckets stamp reset = sample
@@ -834,7 +838,7 @@ const WIN_ORDER = {
 // inside that ~5h rolling horizon; when capped by a multi-day weekly reset
 // (> 6h out), show the real reset clock instead.
 function isRollingWindow(w, resetAt) {
-  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|g4neon|claude)$/i.test(w || "");
+  const is5hRolling = /rolling/i.test(w || "") || /^agy-(?:g3flash|g3image|g3pro|g4hydrogen|g4neon|g4argon-5h|claude)$/i.test(w || "");
   if (!is5hRolling) return false;
   if (!resetAt) return true;
   const delta = Date.parse(resetAt) - Date.now();

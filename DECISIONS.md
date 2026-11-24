@@ -498,7 +498,12 @@ and do **not** relabel it "not offered" (that was wrong and Dave corrected it).
 When Google's API lists `gemini-4-argon*` again (host config already has
 `G4ARGON`), `opencode-quota` returns it and the real percentage replaces this row.
 
-## G4Argon usage comes from the Antigravity quota-summary endpoint — Active (2026-10-30)
+## G4Argon usage comes from the Antigravity quota-summary endpoint — Superseded (2026-10-30; endpoint moved 2026-11-24)
+
+> **Superseded 2026-11-24:** the summary endpoint stopped returning the Argon
+> group; the model catalogue now reports `gemini-4-argon-*` on the shared 5 h
+> bucket. See "Gemini 4 Argon moved onto the shared 5 h bucket" below. The
+> UA/host evidence in this entry is retained as history.
 
 The 2026-10-23 "hidden by Google" conclusion was an endpoint/User-Agent gap,
 not an entitlement proof. Verified live from khpi5 on 2026-10-30:
@@ -581,6 +586,12 @@ the existing 2026-09-05 Claude/GPT rule. The daily host is still the source
 (2026-11-08) and the constant-full annotation is still computed before the
 weekly rows are appended.
 
+(2026-11-24: a weekly bucket with **no** `resetTime` is the unmetered
+placeholder shape — live that day `3p-weekly` answered 100% with no reset while
+the catalogue's Claude bucket carried a real 49% weekly value. The parser now
+skips reset-less weekly buckets, so the card cannot contradict its own Claude
+row. A real bucket always carries a reset and reappears unchanged.)
+
 The per-model 5 h and OpenCode Go rolling windows are provider-stamped
 `reset = sample time + 5 h` while unused. The dashboard now labels those
 `rolling` instead of showing a fixed clock time; the few-second drift between a
@@ -597,7 +608,10 @@ UA) now lists:
   shares the Gemini 5 h bucket with Flash (83% left at the time), no separate
   allowance.
 - **Gemini 4 Carbon** (`gemini-4-carbon-disabled`) — listed but disabled, no
-  `quotaInfo`; never publish a row for it.
+  `quotaInfo`; never publish a row for it. (2026-11-24: the catalogue now
+  reports `gemini-4-carbon-*` with a live shared 5 h `quotaInfo`; it stays
+  unshown by model-set choice, not because Google withholds it — see the Argon
+  entry below.)
 - **Gemini 3 Pro** — gone from the catalogue; the old `G3Pro` slot has nothing
   to report and is simply absent.
 - **Gemini 4 Argon** — now also present in `fetchAvailableModels` (13.3%
@@ -655,6 +669,32 @@ Hydrogen, it shares the Gemini 5 h bucket and is hidden from the pinned
   `google-antigravity` keeps all models (including the hero `Gemini Neon`) in
   its ordered mini model list so scanning the rows never looks like Neon is
   missing.
+
+## Gemini 4 Argon moved onto the shared 5 h bucket — Active (2026-11-24)
+
+Live check on 2026-11-24 (daily host, `antigravity/cli/1.4.7` UA): the quota
+summary returns only `Gemini Models` and `Claude and GPT models` — the
+`Gemini 4 Argon` group is gone — while `fetchAvailableModels` lists
+`gemini-4-argon-{high,medium,low}` with the **same** `quotaInfo` as Flash, Neon
+and Hydrogen (78-81% left, reset = sample time + 5 h). Argon is therefore
+metered on the shared Gemini 5 h bucket now, not a separate weekly allowance.
+
+**Decision:** `antigravityArgonEntry()` reads the catalogue's
+`gemini-4-argon-*` bucket when the summary has no Argon group, and publishes it
+as `G4Argon` with window `agy-g4argon-5h` (short/rolling, never a rollover
+alert). The summary's weekly `agy-g4argon` still wins if Google restores it.
+The `not reported by Google` degraded row is now only used when **neither**
+endpoint reports Argon, and its note says so.
+
+Verified after deploy (2026-11-24T20:03Z collect): card shows `G4Argon 78%`
+(reset 21:00:58Z) with the note "G4Argon from Google's model catalogue", and
+all seven providers `ok`.
+
+Also on the same catalogue check: **Gemini 4 Carbon** now reports a live
+shared 5 h `quotaInfo` (it is no longer `-disabled`). It stays off the card by
+Dave's model-set choice; this is not evidence Google withholds it. The pinned
+CLI still cannot see Argon/Neon/Hydrogen because of its older UA, so the
+collector-side catalogue probe remains the source for those rows.
 
 ## OpenCode Go API key is updatable from Web UI Settings and mirrored to `auth.json` by hash — Active (2026-11-18)
 

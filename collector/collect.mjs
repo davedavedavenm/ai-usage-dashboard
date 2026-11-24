@@ -685,8 +685,10 @@ function windowDurationHours(entry) {
   // Antigravity's per-model buckets (agy-claude, agy-g3flash, agy-g3image,
   // agy-g4hydrogen, agy-g4neon) are 5h rolling windows: when unused, Google stamps reset =
   // sample_time + 5h, so treating any of them as durable causes a ~12h rollover
-  // alert every ~2h as the reset drifts. Only Argon and the plan-level Gemini
-  // weekly bucket are durable Antigravity rollover windows.
+  // alert every ~2h as the reset drifts. Only Argon (when the summary still
+  // publishes its weekly group) and the plan-level Gemini weekly bucket are
+  // durable Antigravity rollover windows; agy-g4argon-5h is the catalogue's
+  // shared 5h bucket and must stay short.
   if (/^agy-gemini-weekly$/.test(win)) return 24 * 7;
   if (/^agy-g4argon$/.test(win)) return 24 * 7;                // Argon summary is weekly
   return 5; // 5h, rolling, agy-claude/g3flash/g3image/g4hydrogen/g4neon, etc.
@@ -1347,7 +1349,8 @@ async function main() {
       if (!r.entries.some(e => /g4\s*argon/i.test(String(e.name || "")))) {
         if (plan?.argon) {
           r.entries.push(plan.argon);
-          r.note = [r.note, "G4Argon from Google's quota summary"].filter(Boolean).join(" · ");
+          const source = plan.argonSource === "catalogue" ? "model catalogue" : "quota summary";
+          r.note = [r.note, `G4Argon from Google's ${source}`].filter(Boolean).join(" · ");
         } else {
           const unavailable = antigravityG4ArgonUnavailable(plan);
           r.entries.push(unavailable.entry);
