@@ -114,7 +114,16 @@ def compute_best_headroom(providers: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(pct, (int, float)) or pct <= 0 or e.get("limited"):
                 continue
             win = str(e.get("window") or "")
-            is_durable = any(k in win.lower() or k in str(e.get("name") or "").lower() for k in ("week", "month", "argon"))
+            win_l = win.lower()
+            # Argon's catalogue window (agy-g4argon-5h) shares the Gemini 5h
+            # bucket; only the summary's weekly agy-g4argon is durable.
+            is_durable = (
+                "week" in win_l
+                or "month" in win_l
+                or "week" in str(e.get("name") or "").lower()
+                or "month" in str(e.get("name") or "").lower()
+                or win_l == "agy-g4argon"
+            )
             score = (1 if is_durable and pct >= 30 else 0, float(pct))
             if best is None or score > best[0]:
                 best = (score, e)
