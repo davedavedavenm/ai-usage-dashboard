@@ -579,22 +579,23 @@ the lowest row; after Argon resets the card could read 100% with a weekly bucket
 mostly used.
 
 **Decision:** `antigravityQuotaSummaryWeekly()` publishes `gemini-weekly` and
-`3p-weekly` as `Gemini weekly` / `Claude/GPT weekly` rows. The 5 h buckets stay
-represented by the existing per-model rows and are not duplicated. Gemini weekly
-participates in the hero and alerts; Claude/GPT weekly stays out of both under
+`3p-weekly` as `Gemini weekly` / `Claude/GPT weekly` rows. The Gemini 5 h bucket
+stays represented by the existing per-model rows and is not duplicated; since
+2026-11-24 `antigravityQuotaSummaryFiveHour()` publishes the Claude/GPT group's
+5 h bucket as `Claude/GPT 5h` (`agy-3p-5h`), because that family has no
+per-model row any more. Gemini weekly
+participates in the hero and alerts; the Claude/GPT rows stay out of both under
 the existing 2026-09-05 Claude/GPT rule. The daily host is still the source
 (2026-11-08) and the constant-full annotation is still computed before the
 weekly rows are appended.
 
-(2026-11-24: a weekly bucket with **no** `resetTime` is no longer published.
-Live that day `3p-weekly` answered exactly 100% with no reset and no
-`description`, while the model catalogue's Claude bucket carried 49% with a
-30 Nov reset; publishing both made the card contradict its own Claude row.
-This is an
-**inference from the bucket's shape**, not a confirmed fact: the two Google
-endpoints disagree on Claude's weekly allowance and the Antigravity app's View
-Usage panel has not been read to arbitrate. The card shows the catalogue's 49%.
-A real bucket always carries a reset and reappears unchanged.)
+(2026-11-24, same day, twice: a first pass stopped publishing weekly buckets
+with **no** `resetTime` because `3p-weekly` read exactly 100% with no reset
+while the per-model Claude row read 49%. That was withdrawn the same day: the
+Antigravity app's View Usage panel showed "Claude and GPT models — Weekly
+limit 100% left" with no reset line, i.e. the summary was right and the
+per-model Claude row was the odd one out. A reset-less bucket is an **unused
+window**, a real reading; publish it as is. See the Claude/GPT entry below.)
 
 The per-model 5 h and OpenCode Go rolling windows are provider-stamped
 `reset = sample time + 5 h` while unused. The dashboard now labels those
@@ -612,11 +613,10 @@ UA) now lists:
   shares the Gemini 5 h bucket with Flash (83% left at the time), no separate
   allowance.
 - **Gemini 4 Carbon** (`gemini-4-carbon-disabled`) — listed but disabled, no
-  `quotaInfo`; never publish a row for it. (2026-11-24: the catalogue now
-  reports `gemini-4-carbon-*` with a live shared 5 h `quotaInfo` and Google's
-  summary names Carbon among the current Gemini models, so the "disabled"
-  premise is gone. It is still not shown; whether to add it is Dave's call,
-  asked 2026-11-24 — see the Argon entry below.)
+  `quotaInfo`; never publish a row for it. (Superseded 2026-11-24: Google
+  enabled Carbon — a live shared 5 h `quotaInfo`, tag "New", listed in the
+  account's model picker — and Dave asked for the row. See "Gemini 4 Carbon is
+  on the card" below.)
 - **Gemini 3 Pro** — gone from the catalogue; the old `G3Pro` slot has nothing
   to report and is simply absent.
 - **Gemini 4 Argon** — now also present in `fetchAvailableModels` (13.3%
@@ -706,11 +706,84 @@ it before adding or trusting a per-model probe.
 
 Also on the same catalogue check: **Gemini 4 Carbon** now reports a live
 shared 5 h `quotaInfo` (it is no longer `-disabled`) and is named in that
-sentence, so the 2026-11-12 "disabled" premise for hiding it is gone. It is
-still not shown; adding it is Dave's call (asked 2026-11-24, unanswered at
-the time of writing). The pinned CLI still cannot see Argon/Neon/Hydrogen
-because of its older UA (18 models versus 37 on the same host), so the
-collector-side catalogue probe remains the source for those rows.
+sentence, so the 2026-11-12 "disabled" premise for hiding it is gone — it is on
+the card since the same day (entry below). The pinned CLI still cannot see
+Argon/Neon/Hydrogen/Carbon because of its older UA (18 models versus 37 on the
+same host), so the collector-side catalogue probe remains the source for those
+rows.
+
+## Gemini 4 Carbon is on the card — Active (2026-11-24)
+
+Google enabled Carbon for this account on 2026-11-24: `gemini-4-carbon-{high,
+medium,low}` carry the shared Gemini 5 h `quotaInfo` and `tagTitle: "New"`
+("For your hardest, long-horizon tasks"), and the catalogue's
+`agentModelSorts` → "Recommended" group lists Carbon third (Neon, Carbon,
+Argon, Hydrogen, 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5, GPT-OSS 120B)
+— the same order as the app's model picker. Dave confirmed the row the same
+day ("yes add carbon").
+
+**Decision:** `antigravityCarbonEntry()` publishes it as **Gemini Carbon**
+(`agy-g4carbon`) beside Neon and Hydrogen: short/rolling, in the
+threshold-alert pool under the shared `agy-gemini-5h` alert window, never a
+rollover window. It shares the Gemini 5 h bucket, so its row repeats that
+percentage — it documents that the model is offered, not a separate allowance.
+
+## Claude/GPT rows come from the quota summary, not the per-model Claude quotaInfo — Active (2026-11-24)
+
+The card used to show one `Claude` row from the pinned CLI's per-model
+`quotaInfo`. That value is not a live allowance:
+
+- It sat near 50% for a month regardless of use — 0.4999584 with a 22 Oct
+  2026 reset in the `quota-parsers.test.mjs` fixture, 0.4936336 with a 30 Nov
+  reset on 2026-11-24 — while the summary's Claude/GPT group went to 0%
+  (panel, 2026-11-08) and back to 100%.
+- In `history.jsonl` (15–24 Nov) `agy-claude` read 100% for all of 18–23 Nov,
+  agreeing with `agy-3p-weekly`, then dropped to 49% on 24 Nov while the
+  summary stayed at 100%.
+- The Antigravity app's View Usage panel (Dave's screenshot, 2026-11-24 about
+  20:23Z) showed **Claude and GPT models — Weekly limit 100% left, 5h limit
+  100% left** with no reset line, and **Gemini Models — 93% weekly (6d 11h),
+  78% 5h (37m)** — identical to the summary.
+
+**Decision:** the summary's group buckets are the authority for the card,
+because they are what the app shows. When the probe returned the Claude/GPT
+group, `collect.mjs` drops the CLI's `agy-claude` row and publishes
+`Claude/GPT weekly` (`agy-3p-weekly`) and `Claude/GPT 5h` (`agy-3p-5h`) from
+the summary; the per-model row stays only as a fallback for a run in which the
+summary did not answer. A bucket with no `resetTime` is an unused window and is
+published without a reset (the page shows "no active window" for a weekly one,
+"rolling" for a 5 h one). `history.jsonl` keeps `agy-3p-weekly` (since 15 Nov)
+and starts `agy-3p-5h`; `agy-claude` stops accruing.
+
+**Rule going forward:** when two Google endpoints disagree for this account,
+read the desktop View Usage panel before choosing — it is the client Dave
+actually sees (the same arbiter as 2026-11-08). An earlier pass the same day
+chose the other way on the shape of the bucket alone, and was wrong.
+
+## The catalogue also says which models are offered, and for how long — Active (2026-11-24)
+
+`fetchAvailableModels` (daily host, `antigravity/cli/1.4.7` UA) carries more
+than `quotaInfo`. These are the fields to reach for when the model set is in
+doubt:
+
+- `agentModelSorts[].groups[].modelIds` — the app's model picker list (the
+  `Recommended` group), in picker order.
+- `defaultAgentModelId` — `gemini-4-neon-high` for this account, which matches
+  the card's Neon hero.
+- `tagTitle` / `tagDescription` per model — lifecycle as the app badges it:
+  Carbon, Hydrogen and Claude Opus 5.5 "New" (API); Neon and Claude Sonnet 5.5
+  "New" (app); **Gemini 4 Argon "Leaving Soon — The original Gemini 4 model
+  for advanced workflows. Leaving on Nov 30."**; GPT-OSS 120B "Notice —
+  GPT-OSS will be removed from Antigravity on November 30, 2026." The app's
+  picker also badges Gemini 3.8 Flash "Leaving Soon" (the `-tiered` catalogue
+  key carries no tag; the named keys were not inspected).
+- `imageGenerationModelIds` — `gemini-3.1-flash-image`: the card's "Gemini
+  Image" row is the image-generation model, which is why it is not in the chat
+  picker. Keep it.
+
+Nothing on the card shows the lifecycle tags yet. The Argon and 3.8 Flash rows
+will disappear by themselves once Google removes those models; do not invent a
+row for them after that.
 
 ## OpenCode Go API key is updatable from Web UI Settings and mirrored to `auth.json` by hash — Active (2026-11-18)
 

@@ -139,7 +139,7 @@ If the AccessKey source fails, the collector degrades through the legacy
 | ChatGPT | `openai` (via opencode-quota CLI) | `opencode auth login -p openai` |
 | Z.ai | direct quota API + console subscription API (`biz/subscription/list`, for the plan renewal date) | auth.json `zai-coding-plan` API key |
 | OpenCode Go | direct usage API | Web UI Settings (`opencodeGoApiKey`, mirrored to `auth.json`) or `auth.json` `opencode-go` key |
-| Gemini · Antigravity | `google-antigravity` (via opencode-quota CLI) — one card per Google AI plan, one window per model (Gemini Flash, Claude, Gemini Image from the CLI; Gemini Neon & Gemini Hydrogen from the daily model catalogue; G4Argon and weekly buckets from the Antigravity quota-summary endpoint, with an explicit `not reported` row if that call fails). Neon & Hydrogen share the Gemini 5 h bucket; Gemini 4 Carbon is disabled and GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
+| Gemini · Antigravity | `google-antigravity` (opencode-quota CLI plus Google's own quota APIs) — one card for the Google AI plan. Gemini Flash and Gemini Image come from the CLI; Gemini Neon, Gemini Hydrogen, Gemini Carbon and G4Argon from the daily model catalogue (all six share the Gemini 5 h bucket); Gemini weekly and the Claude/GPT weekly + 5 h rows from the Antigravity quota-summary endpoint, which is what the app's View Usage panel shows. A `not reported` Argon row appears only if neither endpoint reports it. GPT-OSS is not shown. | `opencode auth login` → Google (Antigravity) |
 | Qwen | Alibaba Token Plan usage API (direct gateway call, `bailian-cli`-maintained token) / token-plan probe | main-account AccessKey in `data/bailian` (self-refreshing console token); legacy browser + cookie + key fallbacks |
 | Radeon Cloud | AMD Token Factory load API (`/radeon/api/tokenfactory/load`) — live per-model load/availability of the public free model APIs; the card note repeats the feed's own `scope` word | none (public feed) |
 
@@ -152,7 +152,7 @@ glow.
 Configured via the Settings tab (Telegram bot token/chat ID and optional webhook URL):
 
 - **Low-allowance warnings**: Staged notifications when the tightest window hits the configured threshold (default 15%) and when it hits 0% (exhausted).
-- **Reset warnings**: Sent **24 hours** and **12 hours** before a durable allowance window resets. The collector picks the longest window that still has allowance (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai; Antigravity's Claude bucket resets on a multi-day/weekly cadence, while its Gemini flash/image buckets are 5-hour and excluded; GPT-OSS is not an Antigravity card or alert window). Fires only when allowance remains (`> 0%`) so you can use it before it expires. If the longest window is exhausted, a shorter durable window with remaining quota can still trigger a warning.
+- **Reset warnings**: Sent **24 hours** and **12 hours** before a durable allowance window resets. The collector picks the longest window that still has allowance (monthly for OpenCode Go and Qwen, weekly for Claude, OpenAI, Z.ai; Antigravity's weekly buckets (`agy-gemini-weekly`, and `agy-g4argon` if the summary reports one) are weekly, while its per-model Gemini buckets are 5-hour and excluded; the Claude/GPT rows never alert; GPT-OSS is not an Antigravity card or alert window). Fires only when allowance remains (`> 0%`) so you can use it before it expires. If the longest window is exhausted, a shorter durable window with remaining quota can still trigger a warning.
 
 ## API
 
