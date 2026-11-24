@@ -688,7 +688,9 @@ endpoint reports Argon, and its note says so.
 
 Verified after deploy (2026-11-24T20:03Z collect): card shows `G4Argon 78%`
 (reset 21:00:58Z) with the note "G4Argon from Google's model catalogue", and
-all seven providers `ok`.
+all seven providers `ok`. The Telegram bot's board/`/resets` logic also treats
+`agy-g4argon-5h` as a shared 5 h bucket (no durable-headroom boost, no
+duplicate reset line).
 
 Also on the same catalogue check: **Gemini 4 Carbon** now reports a live
 shared 5 h `quotaInfo` (it is no longer `-disabled`). It stays off the card by
